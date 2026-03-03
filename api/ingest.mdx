@@ -1,0 +1,96 @@
+---
+title: POST /ingest
+description: Ingest documents into the knowledge base
+---
+
+The `/ingest` endpoint processes and adds documents to the RAG system's knowledge base, making them available for retrieval during question answering.
+
+## Endpoint
+
+```
+POST /api/v1/ingest
+```
+
+## Request Body
+
+<ParamField path="filepath" type="string" required>
+  Absolute path to the document file to ingest. Currently supports Markdown (.md) files.
+</ParamField>
+
+## Response
+
+Returns a success message confirming the document was ingested.
+
+## Example Request
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/ingest" \
+  -H "Content-Type: application/json" \
+  -d '{"filepath": "/path/to/my_doc.md"}'
+```
+
+## How Document Ingestion Works
+
+1. **Document Loading** - The system loads the document from the specified filepath using the Unstructured API
+2. **Chunking** - The document is split into smaller chunks for efficient retrieval
+3. **Embedding** - Each chunk is converted to a vector embedding
+4. **Storage** - Chunks and embeddings are stored in the ChromaDB vector database
+
+## Configuration
+
+Document ingestion requires the following environment variable:
+
+```env
+UNSTRUCTURED_API_KEY=your_api_key
+```
+
+<Note>
+The Unstructured API is used for robust document parsing. Ensure your API key is set in the `.env` file.
+</Note>
+
+## Supported File Formats
+
+Currently, the system supports:
+
+- Markdown files (.md)
+
+Additional formats may be supported in future releases.
+
+## Bulk Ingestion
+
+For ingesting multiple documents at once, use the CLI helper instead:
+
+```bash
+uv run -m src.rag.ingest
+```
+
+This will ingest all Markdown files from the `kb_docs/` folder.
+
+## Chunking Strategy
+
+Documents are chunked with:
+
+- Configurable chunk size (default optimized for context windows)
+- Overlap between chunks to preserve context
+- Metadata preservation (document name, chunk ID)
+
+<Warning>
+Ingesting large documents may take time depending on file size and the Unstructured API response time. The endpoint will return once processing is complete.
+</Warning>
+
+## Best Practices
+
+1. **File Paths** - Use absolute paths to avoid ambiguity
+2. **File Format** - Ensure files are properly formatted Markdown
+3. **Organization** - Structure your knowledge base documents logically for better retrieval
+4. **Updates** - Re-ingest documents after making updates to reflect changes in the knowledge base
+
+## Error Handling
+
+Common errors:
+
+- **File not found** - Verify the filepath is correct and absolute
+- **API key missing** - Ensure `UNSTRUCTURED_API_KEY` is set
+- **Invalid format** - Check that the file is a supported format
+
+All errors return status code 500 with a descriptive message in the `detail` field.

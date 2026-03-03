@@ -1,0 +1,128 @@
+---
+title: Data Ingestion
+description: Learn how to ingest documents into the RAG system using CLI or API methods
+---
+
+The RAG Support System provides two methods for ingesting documents into the Chroma vector database: a CLI tool for batch ingestion and an API endpoint for single-file ingestion.
+
+## Prerequisites
+
+Before ingesting documents, ensure you have:
+
+- `OPENAI_API_KEY` set in your `.env` file
+- `UNSTRUCTURED_API_KEY` set in your `.env` file
+- Documents in Markdown (`.md`) format
+
+## CLI Method (Batch Ingestion)
+
+The CLI method processes all Markdown files in the `kb_docs/` folder in a single operation.
+
+<Steps>
+  <Step title="Prepare your documents">
+    Place all `.md` files you want to ingest into the `kb_docs/` directory.
+  </Step>
+
+  <Step title="Run the ingestion command">
+    ```bash
+    uv run -m src.rag.ingest
+    ```
+
+    This command will:
+    - Load each document using the Unstructured API
+    - Classify the document into a support category
+    - Split content into chunks (default: 500 characters with 50 character overlap)
+    - Store embeddings and metadata in Chroma
+  </Step>
+
+  <Step title="Verify ingestion">
+    The CLI will output progress for each file:
+    ```
+    📄 Ingesting: /path/to/kb_docs/refund-policy.md
+       → Stored 12 chunks
+    📄 Ingesting: /path/to/kb_docs/api-guide.md
+       → Stored 23 chunks
+
+    ✅ Ingested 2 documents | 35 total chunks
+    ```
+  </Step>
+</Steps>
+
+## API Method (Single File)
+
+The API method allows you to ingest one document at a time via HTTP endpoint.
+
+<Steps>
+  <Step title="Start the API server">
+    ```bash
+    uv run main.py
+    ```
+
+    The server will start on `http://localhost:8000`.
+  </Step>
+
+  <Step title="Send ingestion request">
+    Use `curl` or any HTTP client to POST to the `/ingest` endpoint:
+
+    ```bash
+    curl -X POST "http://localhost:8000/ingest" \
+      -H "Content-Type: application/json" \
+      -d '{"filepath": "/absolute/path/to/document.md"}'
+    ```
+
+    **Note:** The filepath must be an absolute path to the document.
+  </Step>
+
+  <Step title="Check response">
+    A successful ingestion returns:
+    ```json
+    {
+      "status": "success",
+      "message": "Document ingested successfully",
+      "chunks_stored": 12
+    }
+    ```
+  </Step>
+</Steps>
+
+## How Ingestion Works
+
+The ingestion pipeline follows these steps (see `src/rag/ingest.py:32`):
+
+1. **Load Document**: Uses Unstructured API to parse the Markdown file
+2. **Classify Category**: Predicts a support category for the entire document
+3. **Chunk Content**: Splits text using `RecursiveCharacterTextSplitter`
+4. **Normalize IDs**: Assigns sequential element IDs for stable references
+5. **Store in Chroma**: Persists chunks with metadata (filename, category, element_id)
+
+## Configuration Options
+
+You can customize chunking behavior by modifying the `chunk_documents` method parameters (see `src/rag/ingest.py:126`):
+
+- `chunk_size`: Maximum characters per chunk (default: 500)
+- `chunk_overlap`: Overlapping characters between chunks (default: 50)
+
+## Storage Location
+
+Ingested documents are stored in the `./chroma_db/` directory with collection name `docs_collection`.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="FileNotFoundError: File not found">
+    Ensure the file path is correct and the file exists. For API ingestion, use absolute paths.
+  </Accordion>
+
+  <Accordion title="UNSTRUCTURED_API_KEY is required">
+    Add your Unstructured API key to the `.env` file:
+    ```env
+    UNSTRUCTURED_API_KEY=your_api_key
+    ```
+  </Accordion>
+
+  <Accordion title="OPENAI_API_KEY is required">
+    Add your OpenAI API key to the `.env` file for embeddings:
+    ```env
+    OPENAI_API_KEY=your_openai_api_key
+    ```
+  </Accordion>
+</AccordionGroup>

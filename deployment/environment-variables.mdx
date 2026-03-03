@@ -1,0 +1,354 @@
+---
+title: Environment variables
+description: Configure API keys and system settings for the RAG Support System
+---
+
+The RAG Support System requires several environment variables for external service integration. This guide covers all configuration options.
+
+## Required variables
+
+<Warning>
+These environment variables are **required** for the system to function. The application will fail to start if they are missing.
+</Warning>
+
+### OPENAI_API_KEY
+
+**Purpose:** Authentication for OpenAI API (embeddings and LLM)
+
+**Used by:**
+- `OpenAIEmbeddings` for document and query embeddings
+- `ChatOpenAI` for answer generation
+
+**How to obtain:**
+1. Create an account at [platform.openai.com](https://platform.openai.com)
+2. Navigate to API keys section
+3. Create a new secret key
+4. Copy the key (it will only be shown once)
+
+**Example:**
+```bash
+OPENAI_API_KEY=sk-proj-abc123def456...
+```
+
+<Note>
+The system uses `text-embedding-3-small` for embeddings and `gpt-4.1` for generation. Ensure your API key has access to these models.
+</Note>
+
+### UNSTRUCTURED_API_KEY
+
+**Purpose:** Authentication for Unstructured.io API (document parsing)
+
+**Used by:**
+- Document ingestion pipeline (`src/rag/ingest.py`)
+- Markdown file parsing and chunking
+
+**How to obtain:**
+1. Sign up at [unstructured.io](https://unstructured.io)
+2. Navigate to API settings
+3. Generate an API key
+
+**Example:**
+```bash
+UNSTRUCTURED_API_KEY=your_unstructured_api_key
+```
+
+<Info>
+The Unstructured API is only needed for document ingestion. If you're only querying the RAG system (not adding new documents), this key is optional.
+</Info>
+
+## Configuration file
+
+Create a `.env` file in the project root:
+
+```bash .env
+# OpenAI Configuration
+OPENAI_API_KEY=sk-proj-abc123def456...
+
+# Unstructured.io Configuration
+UNSTRUCTURED_API_KEY=your_unstructured_api_key
+```
+
+<Warning>
+**Security best practices:**
+- Never commit `.env` to version control (already in `.gitignore`)
+- Use different API keys for development and production
+- Rotate keys regularly
+- Set up billing alerts in OpenAI dashboard
+- Use read-only keys where possible
+</Warning>
+
+## Loading environment variables
+
+The system automatically loads variables from `.env` using `python-dotenv`:
+
+```python src/config.py
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+UNSTRUCTURED_API_KEY = os.getenv("UNSTRUCTURED_API_KEY")
+```
+
+## Setting variables by environment
+
+<Tabs>
+  <Tab title="Development (local)">
+    Create a `.env` file in the project root:
+
+    ```bash
+    # .env
+    OPENAI_API_KEY=sk-proj-...
+    UNSTRUCTURED_API_KEY=...
+    ```
+
+    The application will automatically load these values.
+  </Tab>
+
+  <Tab title="Docker">
+    When using Docker Compose, the `.env` file is automatically loaded:
+
+    ```yaml docker-compose.yml
+    services:
+      app:
+        env_file:
+          - .env
+    ```
+
+    Alternatively, set variables directly:
+
+    ```yaml
+    services:
+      app:
+        environment:
+          - OPENAI_API_KEY=${OPENAI_API_KEY}
+          - UNSTRUCTURED_API_KEY=${UNSTRUCTURED_API_KEY}
+    ```
+  </Tab>
+
+  <Tab title="Production">
+    **Recommended:** Use secrets management instead of `.env` files
+
+    **Cloud platforms:**
+    - **AWS**: Use AWS Secrets Manager or Parameter Store
+    - **GCP**: Use Secret Manager
+    - **Azure**: Use Key Vault
+    - **Kubernetes**: Use Secrets
+
+    **Example with Kubernetes:**
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: rag-api-secrets
+    type: Opaque
+    stringData:
+      OPENAI_API_KEY: sk-proj-...
+      UNSTRUCTURED_API_KEY: ...
+    ```
+
+    Reference in deployment:
+    ```yaml
+    env:
+      - name: OPENAI_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: rag-api-secrets
+            key: OPENAI_API_KEY
+    ```
+  </Tab>
+
+  <Tab title="CI/CD">
+    Set as repository secrets in your CI/CD platform:
+
+    **GitHub Actions:**
+    ```yaml
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      UNSTRUCTURED_API_KEY: ${{ secrets.UNSTRUCTURED_API_KEY }}
+    ```
+
+    **Note:** For testing, use mock values or test-specific keys with rate limits.
+  </Tab>
+</Tabs>
+
+## Optional configuration
+
+While not currently configurable via environment variables, these settings can be modified in the source code:
+
+### LLM configuration
+
+Located in `src/rag/retriever.py`:
+
+```python
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_LLM_MODEL = "gpt-4.1"
+DEFAULT_TEMPERATURE = 0.0
+
+CATEGORY_CONF_THRESHOLD = 0.5
+PRIORITY_CONF_THRESHOLD = 0.5
+```
+
+### Vector store configuration
+
+Located in `SimpleRetrievalAgent.__init__`:
+
+```python
+collection_name: str = "docs_collection"
+persist_dir: str = "./chroma_db"
+```
+
+### API server configuration
+
+Located in `main.py`:
+
+```python
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        log_level="info",
+    )
+```
+
+<Tip>
+**Future enhancement:** These could be made configurable via environment variables for easier deployment customization.
+</Tip>
+
+## Verification
+
+Verify your environment variables are loaded correctly:
+
+```python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Check if keys are present (don't print the actual values!)
+print(f"OPENAI_API_KEY is set: {bool(os.getenv('OPENAI_API_KEY'))}")
+print(f"UNSTRUCTURED_API_KEY is set: {bool(os.getenv('UNSTRUCTURED_API_KEY'))}")
+```
+
+Or test API connectivity:
+
+```bash
+# Start the server
+uv run main.py
+
+# In another terminal, test the health endpoint
+curl http://localhost:8000/api/v1/health
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="KeyError: 'OPENAI_API_KEY'">
+    **Cause:** Environment variable not set or `.env` file not found
+
+    **Solutions:**
+    1. Check `.env` file exists in project root
+    2. Verify variable name spelling (case-sensitive)
+    3. Ensure `python-dotenv` is installed: `uv sync`
+    4. Try loading manually: `export OPENAI_API_KEY=your_key`
+  </Accordion>
+
+  <Accordion title="OpenAI AuthenticationError">
+    **Error:** `openai.AuthenticationError: Invalid API key`
+
+    **Causes:**
+    - Invalid or expired API key
+    - Whitespace in the key value
+    - Key not activated in OpenAI dashboard
+
+    **Solution:**
+    1. Regenerate API key in OpenAI dashboard
+    2. Copy key without extra spaces
+    3. Update `.env` file
+    4. Restart the application
+  </Accordion>
+
+  <Accordion title="Rate limit errors">
+    **Error:** `RateLimitError: Rate limit exceeded`
+
+    **Cause:** Too many API requests in a short period
+
+    **Solutions:**
+    - Check OpenAI dashboard for current limits
+    - Upgrade to a paid tier for higher limits
+    - Implement request throttling
+    - Use caching for repeated queries
+  </Accordion>
+
+  <Accordion title="Environment variables not loading in Docker">
+    **Cause:** `.env` file not mounted or `env_file` not configured
+
+    **Solution:**
+    ```yaml docker-compose.yml
+    services:
+      app:
+        env_file:
+          - .env  # Ensure this line exists
+    ```
+
+    **Verify:**
+    ```bash
+    docker exec -it rag_api printenv | grep OPENAI
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Security checklist
+
+<Steps>
+  <Step title="Protect your .env file">
+    ```bash
+    # Verify .env is in .gitignore
+    grep .env .gitignore
+
+    # Set restrictive permissions
+    chmod 600 .env
+    ```
+  </Step>
+
+  <Step title="Use separate keys per environment">
+    - Development: Test API key with rate limits
+    - Staging: Separate key for integration testing
+    - Production: Dedicated key with monitoring
+  </Step>
+
+  <Step title="Enable billing alerts">
+    Set up alerts in the OpenAI dashboard to prevent unexpected charges.
+  </Step>
+
+  <Step title="Rotate keys regularly">
+    - Generate new keys every 90 days
+    - Update all deployment environments
+    - Revoke old keys immediately
+  </Step>
+
+  <Step title="Monitor usage">
+    - Track API costs in OpenAI dashboard
+    - Set up logging for API calls
+    - Review access patterns regularly
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Docker deployment" icon="docker" href="/deployment/docker">
+    Deploy using Docker and Docker Compose
+  </Card>
+  <Card title="Production deployment" icon="server" href="/deployment/production">
+    Production best practices and scaling
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Complete installation guide
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started in 5 minutes
+  </Card>
+</CardGroup>

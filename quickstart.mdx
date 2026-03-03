@@ -1,80 +1,316 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get from zero to your first RAG query in under 5 minutes with this step-by-step guide
 ---
 
-## Get started in three steps
+This guide will help you set up the RAG Support System and make your first query. You'll install dependencies, ingest knowledge base documents, start the API server, and submit a test question.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, ensure you have:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+- **Python 3.12+** installed
+- **uv** package manager (recommended) or pip
+- **OpenAI API key** for embeddings and LLM
+- **Unstructured API key** for document parsing
+
+<Note>
+If you don't have uv installed, get it with: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+</Note>
+
+## Step 1: Clone and install
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/JoAmps/rgt-assignment.git
+    cd rgt-assignment
+    ```
+  </Step>
+  
+  <Step title="Create a virtual environment">
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate  # macOS/Linux
+    # .venv\Scripts\activate  # Windows
+    ```
+  </Step>
+  
+  <Step title="Install dependencies">
+    ```bash
+    uv sync
+    ```
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    This installs all required packages from `pyproject.toml` including FastAPI, LangChain, Chroma, and OpenAI.
+  </Step>
+</Steps>
+
+## Step 2: Configure environment variables
+
+Create a `.env` file in the project root with your API keys:
+
+```env .env
+OPENAI_API_KEY=your_openai_api_key
+UNSTRUCTURED_API_KEY=your_unstructured_api_key
+```
+
+<Warning>
+Keep your `.env` file out of version control. Never commit API keys to your repository.
+</Warning>
+
+## Step 3: Ingest knowledge base documents
+
+Before the RAG system can answer questions, you need to ingest documentation into the vector store.
+
+<CodeGroup>
+```bash CLI (recommended)
+# Ingest all .md files from kb_docs/ folder
+uv run -m src.rag.ingest
+```
+
+```bash API endpoint
+# Start the API first (see Step 4), then:
+curl -X POST "http://localhost:8000/api/v1/ingest" \
+  -H "Content-Type: application/json" \
+  -d '{"filepath": "/absolute/path/to/document.md"}'
+```
+</CodeGroup>
+
+<Info>
+Document ingestion chunks your markdown files using Unstructured API, generates embeddings with OpenAI's `text-embedding-3-small`, and stores them in Chroma at `./chroma_db`.
+</Info>
+
+You should see output like:
+
+```
+Processing: kb_docs/billing.md
+Chunked into 12 segments
+Stored in Chroma collection: docs_collection
+```
+
+## Step 4: Start the API server
+
+Launch the FastAPI development server:
+
+```bash
+uv run main.py
+```
+
+The server starts at `http://localhost:8000` with these endpoints:
+
+- `GET /api/v1/health` — Health check
+- `POST /api/v1/ingest` — Ingest documents
+- `POST /api/v1/answer` — Submit questions
+- `POST /api/v1/triage` — Run triage models
+
+Visit `http://localhost:8000/api/docs` for interactive API documentation.
+
+## Step 5: Make your first RAG query
+
+Now that documents are ingested and the API is running, submit a test question:
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/answer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Refund issue",
+    "body": "I was charged twice for my subscription",
+    "user_question": "How long does a refund take?"
+  }'
+```
+
+### Expected response
+
+```json
+{
+  "draft_reply": "Refunds are typically processed within 5-7 business days. Once approved, the amount will be credited back to your original payment method. You'll receive an email confirmation when the refund is complete.",
+  "internal_next_steps": [
+    "Verify duplicate charge in billing system",
+    "Initiate refund for duplicate transaction",
+    "Follow up with customer in 7 days"
+  ],
+  "citations": [
+    {
+      "document_name": "billing.md",
+      "chunk_id": "element-12",
+      "snippet": "Refunds are typically processed...",
+      "full_content": "Refunds are typically processed within 5-7 business days..."
+    }
+  ],
+  "needs_human_review": false,
+  "predicted_category": "Billing & Payments",
+  "predicted_priority": "P1",
+  "confidence": {
+    "category": 0.92,
+    "priority": 0.87
+  }
+}
+```
+
+<Info>
+The response includes:
+- **draft_reply** — Customer-facing answer
+- **internal_next_steps** — Actions for support agents
+- **citations** — Source documents with snippets
+- **needs_human_review** — Flag for low-confidence predictions
+- **predicted_category** and **predicted_priority** — Triage model outputs
+</Info>
+
+## Understanding the response
+
+Let's break down what just happened:
+
+<Steps>
+  <Step title="Triage prediction">
+    The system ran ML models to predict:
+    - **Category**: `Billing & Payments` (confidence: 0.92)
+    - **Priority**: `P1` (confidence: 0.87)
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    High confidence scores mean the prediction is reliable.
+  </Step>
+  
+  <Step title="Semantic retrieval">
+    The RAG agent:
+    1. Embedded your question with `text-embedding-3-small`
+    2. Searched Chroma for top 5 similar chunks filtered by predicted category
+    3. Retrieved relevant context from `billing.md`
+  </Step>
+  
+  <Step title="Answer generation">
+    The LLM (GPT-4.1) generated a grounded answer using:
+    - Retrieved context from the knowledge base
+    - Category-specific system prompt
+    - Priority-aware tone adjustments
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    The answer is constrained to ONLY use information from retrieved documents.
+  </Step>
+  
+  <Step title="Structured outputs">
+    The system generated:
+    - **Citations** with source documents and snippets
+    - **Internal next steps** for support agents
+    - **Review flag** based on confidence thresholds (0.5 for category and priority)
+  </Step>
+</Steps>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## What's happening under the hood?
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+Here's the code that powers your query, from `src/rag/retriever.py:201-260`:
 
-### Step 3: Go live
+```python retriever.py
+def answer(
+    self,
+    query: str,
+    predicted_category: str,
+    priority: str,
+    confidence: Dict[str, float],
+    k: int = 5,
+) -> Dict:
+    """
+    End-to-end RAG pipeline.
+    """
+    # Retrieve top-k chunks filtered by category
+    chunks = self.retrieve(
+        query,
+        predicted_category=predicted_category,
+        k=k,
+    )
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    if not chunks:
+        return {
+            "draft_reply": "Insufficient context. Please clarify your request.",
+            "internal_next_steps": [],
+            "citations": [],
+            "needs_human_review": True,
+        }
+
+    # Assemble context from retrieved chunks
+    context_text = "\n\n".join(c["content"] for c in chunks)
+
+    # Generate grounded answer
+    answer = self.generate_answer(
+        context=context_text,
+        query=query,
+        predicted_category=predicted_category,
+        priority=priority,
+    )
+
+    # Generate internal next steps
+    internal_next_steps = generate_internal_next_steps(
+        context=context_text,
+        query=query,
+    )
+
+    # Flag for human review if confidence is low
+    needs_human_review = (
+        confidence.get("category", 0) < CATEGORY_CONF_THRESHOLD
+        or confidence.get("priority", 0) < PRIORITY_CONF_THRESHOLD
+    )
+
+    return self.format_response(
+        answer=answer,
+        internal_next_steps=internal_next_steps,
+        chunks=chunks,
+        needs_human_review=needs_human_review,
+    )
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
+Now that you've made your first query, explore more:
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Train triage models" icon="brain">
+    Train custom ML models on your support tickets:
+    ```bash
+    uv run -m src.ml.train
+    ```
+  </Card>
+  
+  <Card title="Run evaluations" icon="chart-line">
+    Test answer quality with offline metrics:
+    ```bash
+    python -m src.rag.evals
+    ```
+  </Card>
+  
+  <Card title="Explore the architecture" icon="diagram-project" href="/architecture">
+    Learn how system components work together
+  </Card>
+  
+  <Card title="Read API docs" icon="book" href="/api/overview">
+    Dive into endpoint specifications and request models
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Import errors or missing modules">
+    Ensure you've activated your virtual environment and run `uv sync`:
+    ```bash
+    source .venv/bin/activate
+    uv sync
+    ```
+  </Accordion>
+  
+  <Accordion title="OpenAI authentication errors">
+    Verify your `.env` file contains a valid `OPENAI_API_KEY` and is in the project root directory.
+  </Accordion>
+  
+  <Accordion title="No chunks retrieved / empty results">
+    Make sure you've ingested documents before querying:
+    ```bash
+    uv run -m src.rag.ingest
+    ```
+    Check that `./chroma_db` directory exists and contains data.
+  </Accordion>
+  
+  <Accordion title="Triage model errors">
+    Train triage models before making queries:
+    ```bash
+    uv run -m src.ml.train
+    ```
+    Trained models are saved to `artifacts/` and required for the `/answer` endpoint.
+  </Accordion>
+</AccordionGroup>

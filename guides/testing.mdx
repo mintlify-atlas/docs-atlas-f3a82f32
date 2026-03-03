@@ -1,0 +1,314 @@
+---
+title: Testing
+description: Run unit tests with pytest for the RAG Support System
+---
+
+The RAG Support System includes comprehensive unit tests that validate functionality without requiring external API calls. All tests mock external services to run offline.
+
+## Overview
+
+The test suite covers:
+
+- RAG retrieval and answer generation
+- Document ingestion pipelines
+- ML model training and prediction
+- API endpoints and services
+- Structured outputs and verification
+
+## Prerequisites
+
+- Python 3.12+ installed
+- Dependencies installed via `uv sync`
+- Test files located in `tests/` directory
+
+## Running Tests
+
+### Full Test Suite (Quiet Mode)
+
+Run all tests with minimal output:
+
+```bash
+pytest -q
+```
+
+Output:
+```
+......................                                    [100%]
+22 passed in 3.45s
+```
+
+### Verbose Mode with Print Statements
+
+Run tests with detailed output and capture print statements:
+
+```bash
+uv run pytest -s -v tests/
+```
+
+Output:
+```
+tests/test_retriever.py::test_search_and_answer PASSED
+tests/test_ingestion.py::test_ingest_document PASSED
+tests/test_ml_training.py::test_train_models PASSED
+...
+```
+
+Flags:
+- `-s`: Show print statements and logging output
+- `-v`: Verbose mode (show test names)
+
+### Run Specific Test File
+
+Execute tests from a single file:
+
+```bash
+pytest tests/test_retriever.py -q
+```
+
+### Run Specific Test Function
+
+Execute a single test:
+
+```bash
+pytest tests/test_retriever.py::test_search_and_answer -q
+```
+
+## Test Structure
+
+Tests are organized in the `tests/` directory:
+
+```
+tests/
+├── test_retriever.py       # RAG retrieval tests
+├── test_ingestion.py       # Document ingestion tests
+├── test_ml_training.py     # Model training tests
+├── test_ml_predict.py      # Prediction tests
+├── test_api.py             # API endpoint tests
+└── conftest.py             # Shared fixtures and mocks
+```
+
+## Mocking External Services
+
+All tests mock external API calls to ensure offline execution:
+
+### Mocked Services
+
+- **OpenAI API**: LLM calls and embeddings
+- **Chroma**: Vector database operations
+- **Unstructured API**: Document parsing
+
+Example mock usage:
+```python
+import pytest
+from unittest.mock import Mock, patch
+
+@patch("src.rag.retriever.OpenAIEmbeddings")
+def test_retrieval(mock_embeddings):
+    mock_embeddings.return_value.embed_query.return_value = [0.1] * 1536
+    # Test retrieval logic
+    assert result is not None
+```
+
+## Test Coverage
+
+### RAG Retrieval Tests
+
+Validate search and answer generation:
+```python
+def test_search_and_answer():
+    """Test that RAG retrieval returns relevant documents and answers."""
+    # Mock Chroma search
+    # Mock LLM generation
+    # Assert correct documents retrieved
+    # Assert answer quality
+```
+
+### Ingestion Tests
+
+Validate document processing:
+```python
+def test_ingest_document():
+    """Test document loading, chunking, and storage."""
+    # Mock Unstructured loader
+    # Test chunking logic
+    # Assert correct metadata
+```
+
+### ML Training Tests
+
+Validate model training:
+```python
+def test_train_models():
+    """Test category and priority model training."""
+    # Provide sample training data
+    # Assert models are trained
+    # Assert metrics are computed
+```
+
+### API Tests
+
+Validate HTTP endpoints:
+```python
+def test_ingest_endpoint():
+    """Test POST /ingest endpoint."""
+    response = client.post("/ingest", json={"filepath": "/path/to/doc.md"})
+    assert response.status_code == 200
+```
+
+## Running Tests in CI
+
+The project includes a GitHub Actions workflow (`.github/workflows/ci.yml`) that:
+
+1. Sets up Python environment
+2. Installs dependencies
+3. Runs full test suite
+4. Reports test results
+
+## Test Fixtures
+
+Common fixtures are defined in `conftest.py`:
+
+```python
+import pytest
+
+@pytest.fixture
+def sample_ticket():
+    """Provide sample ticket data for tests."""
+    return {
+        "subject": "Billing issue",
+        "body": "I was charged twice",
+        "user_question": "How do I get a refund?"
+    }
+
+@pytest.fixture
+def mock_chroma_client():
+    """Mock Chroma vector database client."""
+    # Return mocked Chroma client
+```
+
+## Test Output and Reports
+
+Pytest generates detailed output:
+
+### Success Output
+
+```
+================================ test session starts =================================
+platform linux -- Python 3.12.0, pytest-7.4.3, pluggy-1.3.0
+rootdir: /path/to/project
+collected 22 items
+
+tests/test_retriever.py::test_search_and_answer PASSED                      [  4%]
+tests/test_ingestion.py::test_ingest_document PASSED                        [  9%]
+tests/test_ml_training.py::test_train_models PASSED                         [ 13%]
+...
+
+================================ 22 passed in 3.45s ==================================
+```
+
+### Failure Output
+
+```
+================================== FAILURES ==========================================
+_________________________ test_search_and_answer _________________________________
+
+    def test_search_and_answer():
+>       assert result is not None
+E       AssertionError: assert None is not None
+
+tests/test_retriever.py:42: AssertionError
+================================ 1 failed, 21 passed in 3.52s ========================
+```
+
+## Best Practices
+
+### Running Tests During Development
+
+1. **Before committing**: Run full test suite
+   ```bash
+   pytest -q
+   ```
+
+2. **During feature development**: Run relevant test file
+   ```bash
+   pytest tests/test_feature.py -v
+   ```
+
+3. **Debugging failures**: Use verbose mode with prints
+   ```bash
+   pytest tests/test_feature.py::test_specific -s -v
+   ```
+
+### Writing New Tests
+
+When adding new functionality:
+
+1. Create test file in `tests/` directory
+2. Import necessary mocks from `conftest.py`
+3. Write test functions with `test_` prefix
+4. Mock all external API calls
+5. Assert expected behavior
+
+Example:
+```python
+import pytest
+from unittest.mock import patch
+from src.my_module import my_function
+
+@patch("src.my_module.external_service")
+def test_my_function(mock_service):
+    mock_service.return_value = "mocked_response"
+    result = my_function()
+    assert result == "expected_value"
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="ModuleNotFoundError: No module named 'src'">
+    Ensure you're running pytest from the project root directory and dependencies are installed:
+    ```bash
+    uv sync
+    ```
+  </Accordion>
+
+  <Accordion title="Tests fail with API key errors">
+    Tests should NOT require real API keys. If you see this error, mocking may be incomplete. Check that:
+    - External services are properly mocked
+    - Environment variables are not being accessed in test code
+  </Accordion>
+
+  <Accordion title="Tests pass locally but fail in CI">
+    Common causes:
+    - Missing test dependencies in CI environment
+    - Path differences between local and CI
+    - Race conditions in parallel test execution
+  </Accordion>
+
+  <Accordion title="ImportError: cannot import name 'X' from 'src.module'">
+    This usually indicates:
+    - Circular import in source code
+    - Missing `__init__.py` files
+    - Incorrect import paths
+  </Accordion>
+</AccordionGroup>
+
+## Additional Commands
+
+### Run tests with coverage report
+
+```bash
+pytest --cov=src --cov-report=html tests/
+```
+
+### Run tests in parallel (requires pytest-xdist)
+
+```bash
+pytest -n auto tests/
+```
+
+### Run only tests marked with specific marker
+
+```bash
+pytest -m "integration" tests/
+```

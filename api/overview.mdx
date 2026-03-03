@@ -1,0 +1,65 @@
+---
+title: API Overview
+description: Introduction to the RAG Support System API
+---
+
+The RAG Support System API provides endpoints for document ingestion, intelligent ticket answering using Retrieval-Augmented Generation, ML-powered triage classification, and system health monitoring.
+
+## Base URL
+
+All API endpoints are served from:
+
+```
+http://localhost:8000/api/v1
+```
+
+## API Documentation
+
+Interactive API documentation is available at:
+
+```
+http://localhost:8000/api/docs
+```
+
+## Authentication
+
+Currently, the API does not require authentication. All endpoints are publicly accessible.
+
+<Note>
+Authentication will be added in a future release. For production deployments, ensure the API is protected by network-level security controls.
+</Note>
+
+## Available Endpoints
+
+The API consists of the following endpoints:
+
+- **POST /api/v1/answer** - Query the RAG system for intelligent ticket answers
+- **POST /api/v1/triage** - Run ML triage classification on support tickets
+- **POST /api/v1/ingest** - Ingest documents into the knowledge base
+- **GET /api/v1/health** - Check API health status
+
+## Content Type
+
+All POST requests must include the `Content-Type: application/json` header and send data as JSON in the request body.
+
+## CORS Configuration
+
+The API is configured with permissive CORS settings for development:
+
+- All origins are allowed (`*`)
+- All methods are allowed
+- All headers are allowed
+- Credentials are supported
+
+<Warning>
+For production deployments, restrict CORS to specific trusted origins.
+</Warning>
+
+## Error Handling
+
+The API returns standard HTTP status codes:
+
+- **200** - Success
+- **500** - Internal server error
+
+Error responses include a `detail` field with a description of what went wrong.

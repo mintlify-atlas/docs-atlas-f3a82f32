@@ -1,0 +1,209 @@
+---
+title: Response Models
+description: API response models for the RAG Support System
+---
+
+All response models are defined using Pydantic and provide structured data from the API.
+
+## TriageResponse
+
+Returned when triaging a support ticket to determine its category and priority.
+
+<ResponseField name="category" type="string" required>
+  The categorized type of the support ticket (e.g., "technical", "billing", "account")
+</ResponseField>
+
+<ResponseField name="priority" type="string" required>
+  The priority level of the ticket (e.g., "high", "medium", "low")
+</ResponseField>
+
+<ResponseField name="confidence" type="object" required>
+  Confidence scores for the triage classification
+  
+  <Expandable title="Confidence object">
+    <ResponseField name="category" type="float" required>
+      Confidence score (0-1) for the category classification
+    </ResponseField>
+    
+    <ResponseField name="priority" type="float" required>
+      Confidence score (0-1) for the priority classification
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```json
+{
+  "category": "technical",
+  "priority": "high",
+  "confidence": {
+    "category": 0.95,
+    "priority": 0.87
+  }
+}
+```
+
+## AnswerResponse
+
+Comprehensive response containing triage, draft reply, next steps, and citations.
+
+<ResponseField name="triage" type="object" required>
+  Triage information for the support ticket
+  
+  <Expandable title="TriageResponse object">
+    <ResponseField name="category" type="string" required>
+      The categorized type of the support ticket
+    </ResponseField>
+    
+    <ResponseField name="priority" type="string" required>
+      The priority level of the ticket
+    </ResponseField>
+    
+    <ResponseField name="confidence" type="object" required>
+      Confidence scores for the triage classification
+      
+      <Expandable title="Confidence object">
+        <ResponseField name="category" type="float" required>
+          Confidence score (0-1) for the category classification
+        </ResponseField>
+        
+        <ResponseField name="priority" type="float" required>
+          Confidence score (0-1) for the priority classification
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="draft_reply" type="string" required>
+  AI-generated draft response to the support ticket
+</ResponseField>
+
+<ResponseField name="internal_next_steps" type="array" required>
+  List of recommended internal actions for support staff
+</ResponseField>
+
+<ResponseField name="citations" type="array" required>
+  Supporting citations from the knowledge base
+  
+  <Expandable title="Citation object">
+    <ResponseField name="document_name" type="string" required>
+      Name of the source document
+    </ResponseField>
+    
+    <ResponseField name="chunk_id" type="string" required>
+      Unique identifier for the document chunk
+    </ResponseField>
+    
+    <ResponseField name="snippet" type="string" required>
+      Brief excerpt from the document
+    </ResponseField>
+    
+    <ResponseField name="full_content" type="string" required>
+      Complete content of the relevant document chunk
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="needs_human_review" type="boolean" required>
+  Flag indicating whether this ticket requires human review before sending the draft reply
+</ResponseField>
+
+### Example
+
+```json
+{
+  "triage": {
+    "category": "technical",
+    "priority": "high",
+    "confidence": {
+      "category": 0.95,
+      "priority": 0.87
+    }
+  },
+  "draft_reply": "Thank you for contacting support. To reset your password, please visit our password reset page at example.com/reset and follow the instructions...",
+  "internal_next_steps": [
+    "Verify user identity",
+    "Check if email delivery is working",
+    "Escalate to Tier 2 if issue persists"
+  ],
+  "citations": [
+    {
+      "document_name": "password-reset-guide.pdf",
+      "chunk_id": "chunk_42",
+      "snippet": "Users can reset their password by visiting the password reset page...",
+      "full_content": "Users can reset their password by visiting the password reset page and entering their email address. A reset link will be sent within 5 minutes."
+    }
+  ],
+  "needs_human_review": true
+}
+```
+
+## HealthResponse
+
+Simple health check response to verify the API is running.
+
+<ResponseField name="status" type="string" required>
+  Health status of the API (default: "ok")
+</ResponseField>
+
+### Example
+
+```json
+{
+  "status": "ok"
+}
+```
+
+## Confidence
+
+Standalone model for confidence scores used in triage operations.
+
+<ResponseField name="category" type="float" required>
+  Confidence score (0-1) for the category classification
+</ResponseField>
+
+<ResponseField name="priority" type="float" required>
+  Confidence score (0-1) for the priority classification
+</ResponseField>
+
+### Example
+
+```json
+{
+  "category": 0.95,
+  "priority": 0.87
+}
+```
+
+## Citation
+
+Standalone model representing a citation from the knowledge base.
+
+<ResponseField name="document_name" type="string" required>
+  Name of the source document
+</ResponseField>
+
+<ResponseField name="chunk_id" type="string" required>
+  Unique identifier for the document chunk
+</ResponseField>
+
+<ResponseField name="snippet" type="string" required>
+  Brief excerpt from the document
+</ResponseField>
+
+<ResponseField name="full_content" type="string" required>
+  Complete content of the relevant document chunk
+</ResponseField>
+
+### Example
+
+```json
+{
+  "document_name": "api-documentation.pdf",
+  "chunk_id": "chunk_123",
+  "snippet": "The API supports authentication via JWT tokens...",
+  "full_content": "The API supports authentication via JWT tokens. Include the token in the Authorization header as 'Bearer <token>' for all authenticated requests."
+}
+```

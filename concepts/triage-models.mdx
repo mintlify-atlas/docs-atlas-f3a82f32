@@ -1,0 +1,292 @@
+---
+title: Triage Models
+description: Learn how ML models classify tickets by category and priority with confidence scoring
+---
+
+The triage system uses machine learning to automatically classify support tickets into categories and priority levels. This enables intelligent routing and context-aware answer generation.
+
+## Architecture
+
+Two separate logistic regression models handle classification:
+
+- **Category Model** - Predicts support domain (Billing, Authentication, etc.)
+- **Priority Model** - Predicts urgency level (Low, Medium, High)
+
+Both models use TF-IDF features extracted from ticket subject and body text.
+
+<Info>
+The models are trained offline and loaded once at service initialization for fast inference.
+</Info>
+
+## Model Training
+
+Training happens in `src/ml/train.py` using a supervised learning pipeline.
+
+### Pipeline Construction
+
+```python
+def build_pipeline() -> Pipeline:
+    """
+    Construct a text classification pipeline.
+    """
+    return Pipeline(
+        [
+            ("features", build_feature_union()),
+            ("clf", LogisticRegression(max_iter=500, class_weight="balanced")),
+        ]
+    )
+```
+
+<Note>
+The `class_weight="balanced"` parameter ensures the model handles class imbalance effectively.
+</Note>
+
+### Data Preprocessing
+
+Text is normalized before feature extraction:
+
+```python
+def load_dataset(
+    train_csv: str,
+    df_override: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """
+    Load the training dataset from disk or use an injected DataFrame.
+    """
+    df = df_override.copy() if df_override is not None else pd.read_csv(train_csv)
+
+    # Text normalization
+    df["subject"] = df["subject"].apply(preprocess_text)
+    df["body"] = df["body"].apply(preprocess_text)
+
+    return df
+```
+
+### Train/Validation Split
+
+Stratified splitting ensures balanced representation:
+
+```python
+def split_train_val(
+    X: pd.DataFrame,
+    y_category: pd.Series,
+    y_priority: pd.Series,
+    test_size: float = 0.2,
+    random_state: int = 42,
+) -> Tuple:
+    """
+    Perform a train/validation split with optional stratification.
+    """
+    stratify = y_category if y_category.value_counts().min() >= 2 else None
+
+    if stratify is None:
+        warnings.warn(
+            "Dataset too small for stratified split; using non-stratified split."
+        )
+
+    return train_test_split(
+        X,
+        y_category,
+        y_priority,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=stratify,
+    )
+```
+
+### Edge Case Handling
+
+The training pipeline handles single-class datasets gracefully:
+
+```python
+class ConstantPredictor:
+    """
+    Fallback predictor used when the training data contains only one class.
+    """
+
+    def __init__(self, label):
+        self.label = label
+
+    def predict(self, X):
+        return [self.label] * len(X)
+
+    def predict_proba(self, X):
+        return np.ones((len(X), 1))
+
+
+def train_or_fallback(pipeline: Pipeline, X, y):
+    """
+    Train a pipeline or fall back to a constant predictor if only one class exists.
+    """
+    if y.nunique() >= 2:
+        pipeline.fit(X, y)
+        return pipeline
+
+    return ConstantPredictor(y.iloc[0])
+```
+
+<Warning>
+Constant predictors are used automatically when training data lacks class diversity.
+</Warning>
+
+## Inference
+
+The `TriageModel` class handles runtime predictions:
+
+```python
+class TriageModel:
+    """
+    ML model for triaging support tickets:
+      - predicts category and priority
+      - returns confidence scores
+    """
+
+    def __init__(
+        self,
+        category_model_path: str = "artifacts/category_model.joblib",
+        priority_model_path: str = "artifacts/priority_model.joblib",
+    ):
+        """
+        Load pre-trained ML models from disk.
+        """
+        self.category_model_path = Path(category_model_path)
+        self.priority_model_path = Path(priority_model_path)
+
+        # Load models once during initialization
+        self.category_model = self._load_model(self.category_model_path)
+        self.priority_model = self._load_model(self.priority_model_path)
+
+    @staticmethod
+    def _load_model(path: Path):
+        if not path.exists():
+            raise FileNotFoundError(f"ML model not found: {path}")
+        return joblib.load(path)
+```
+
+### Prediction with Confidence
+
+```python
+def predict(self, subject: str, body: str) -> Dict:
+    """
+    Predict category and priority from ticket subject and body.
+
+    Returns:
+        Dict with:
+            - category: predicted category
+            - priority: predicted priority
+            - confidence: dict with category & priority probabilities
+    """
+    # Preprocess inputs
+    subject_clean = preprocess_text(subject)
+    body_clean = preprocess_text(body)
+
+    X = pd.DataFrame([{"subject": subject_clean, "body": body_clean}])
+
+    # Predict labels
+    category = self.category_model.predict(X)[0]
+    priority = self.priority_model.predict(X)[0]
+
+    # Predict confidence scores
+    cat_conf = max(self.category_model.predict_proba(X)[0])
+    pri_conf = max(self.priority_model.predict_proba(X)[0])
+
+    return {
+        "category": category,
+        "priority": priority,
+        "confidence": {"category": float(cat_conf), "priority": float(pri_conf)},
+    }
+```
+
+<Info>
+Confidence scores are derived from the maximum probability across all classes.
+</Info>
+
+## Evaluation Metrics
+
+The training script computes standard classification metrics:
+
+```python
+def compute_metrics(
+    y_true_cat,
+    y_pred_cat,
+    y_true_pri,
+    y_pred_pri,
+) -> Dict[str, float]:
+    """
+    Compute validation metrics for both tasks.
+    """
+    return {
+        "category_macro_f1": float(f1_score(y_true_cat, y_pred_cat, average="macro")),
+        "priority_f1": float(f1_score(y_true_pri, y_pred_pri, average="weighted")),
+        "priority_recall": float(
+            recall_score(y_true_pri, y_pred_pri, average="weighted")
+        ),
+    }
+```
+
+### Visualization
+
+Confusion matrices are automatically generated for both models:
+
+```python
+def plot_confusion_matrix(
+    y_true,
+    y_pred,
+    labels,
+    title: str,
+    cmap: str,
+    save_path: str,
+):
+    """
+    Plot and save a confusion matrix.
+    """
+    cm = confusion_matrix(y_true, y_pred, labels=labels)
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap=cmap,
+        xticklabels=labels,
+        yticklabels=labels,
+    )
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
+    plt.title(title)
+    plt.savefig(save_path, bbox_inches="tight")
+    plt.close()
+```
+
+<Card title="Model Artifacts" icon="box">
+Trained models are saved to `artifacts/` as `.joblib` files for fast loading.
+</Card>
+
+## Confidence Thresholds
+
+The RAG pipeline uses confidence scores to flag uncertain predictions:
+
+```python
+CATEGORY_CONF_THRESHOLD = 0.5
+PRIORITY_CONF_THRESHOLD = 0.5
+
+needs_human_review = (
+    confidence.get("category", 0) < CATEGORY_CONF_THRESHOLD
+    or confidence.get("priority", 0) < PRIORITY_CONF_THRESHOLD
+)
+```
+
+<Warning>
+Tickets with low confidence scores are automatically flagged for human review.
+</Warning>
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="RAG Pipeline" icon="workflow" href="/concepts/rag-pipeline">
+    See how triage predictions guide retrieval
+  </Card>
+  <Card title="Structured Outputs" icon="list" href="/concepts/structured-outputs">
+    Understand review flags and next steps
+  </Card>
+</CardGroup>

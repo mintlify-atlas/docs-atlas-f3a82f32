@@ -1,0 +1,151 @@
+---
+title: Training Models
+description: Train category and priority classification models for ticket triage
+---
+
+The RAG Support System includes machine learning models for automatic ticket triage. This guide explains how to train the category and priority classifiers.
+
+## Overview
+
+The training script trains two ML pipelines:
+
+- **Category Classifier**: Predicts support ticket categories (e.g., billing, technical, account)
+- **Priority Classifier**: Predicts ticket priority levels (e.g., low, medium, high, urgent)
+
+Both models use logistic regression with TF-IDF features extracted from ticket subject and body text.
+
+## Prerequisites
+
+- Training data: `tickets_train.csv` in the project root
+- Required columns: `subject`, `body`, `category_label`, `priority_label`
+- Python 3.12+ with dependencies installed via `uv sync`
+
+## Training Command
+
+<Steps>
+  <Step title="Prepare training data">
+    Ensure `tickets_train.csv` exists in your project root with the required columns.
+  </Step>
+
+  <Step title="Run training">
+    ```bash
+    uv run -m src.ml.train
+    ```
+
+    **Note:** Training can only be done through the CLI, not via the API.
+  </Step>
+
+  <Step title="Monitor progress">
+    The training script will output:
+    ```
+    Starting training...
+    Training complete.
+    {
+      "category_macro_f1": 0.87,
+      "priority_f1": 0.82,
+      "priority_recall": 0.81
+    }
+    ```
+  </Step>
+</Steps>
+
+## Training Process
+
+The training pipeline performs the following steps (see `src/ml/train.py:242`):
+
+1. **Load Dataset**: Reads `tickets_train.csv` and normalizes text
+2. **Train/Val Split**: Creates 80/20 split with stratification
+3. **Feature Extraction**: Builds TF-IDF features from subject and body
+4. **Model Training**: Fits logistic regression with balanced class weights
+5. **Validation**: Computes metrics on held-out validation set
+6. **Artifact Saving**: Persists models and reports
+
+## Output Artifacts
+
+After training completes, the following artifacts are generated:
+
+### Model Files (artifacts/)
+
+- `category_model.joblib`: Trained category classifier pipeline
+- `priority_model.joblib`: Trained priority classifier pipeline
+
+These models are loaded automatically by the prediction and API services.
+
+### Reports (reports/)
+
+- `val_metrics.json`: Validation metrics in JSON format
+- `category_confusion_matrix.png`: Confusion matrix visualization for categories
+- `priority_confusion_matrix.png`: Confusion matrix visualization for priorities
+
+## Validation Metrics
+
+The training script computes three key metrics (see `src/ml/train.py:174`):
+
+| Metric | Description |
+|--------|-------------|
+| `category_macro_f1` | Macro-averaged F1 score for category classification |
+| `priority_f1` | Weighted F1 score for priority classification |
+| `priority_recall` | Weighted recall for priority classification |
+
+Example `reports/val_metrics.json`:
+```json
+{
+    "category_macro_f1": 0.87,
+    "priority_f1": 0.82,
+    "priority_recall": 0.81
+}
+```
+
+## Confusion Matrices
+
+Confusion matrices are saved as PNG images in the `reports/` directory. These visualizations help identify:
+
+- Which categories are frequently confused
+- Priority levels that are difficult to distinguish
+- Class imbalance issues
+
+The matrices use:
+- Blues colormap for categories
+- Oranges colormap for priorities
+
+## Edge Case Handling
+
+The training script includes robust handling for edge cases (see `src/ml/train.py:150`):
+
+- **Single-class datasets**: Falls back to `ConstantPredictor` when only one class exists
+- **Small datasets**: Uses non-stratified split when stratification is impossible
+- **Class imbalance**: Applies `class_weight="balanced"` in logistic regression
+
+## Programmatic Usage
+
+You can call the training function programmatically:
+
+```python
+from src.ml.train import train
+
+metrics = train(
+    train_csv="path/to/tickets_train.csv",
+    artifacts_dir="artifacts/",
+    reports_dir="reports/",
+    save_artifacts=True,
+    plot=True
+)
+
+print(f"Category F1: {metrics['category_macro_f1']:.2f}")
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="FileNotFoundError: tickets_train.csv not found">
+    Ensure `tickets_train.csv` exists in the project root or provide a custom path via the `train_csv` parameter.
+  </Accordion>
+
+  <Accordion title="ValueError: Dataset too small for stratified split">
+    This warning appears when you have very few samples per class. The training will continue with a non-stratified split.
+  </Accordion>
+
+  <Accordion title="Models predict constant values">
+    Check if your training data has only one class. The system will use a `ConstantPredictor` fallback in this case.
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,400 @@
+---
+title: Installation
+description: Comprehensive setup guide for Python environment, dependencies, API keys, and development tools
+---
+
+This guide covers everything you need to install and configure the RAG Support System for development or production use.
+
+## System requirements
+
+Before installing, verify your environment meets these requirements:
+
+- **Python 3.12+** (Python 3.11+ may work but 3.12+ is recommended)
+- **uv** package manager (recommended) or pip
+- **Git** for cloning the repository
+- **Docker & Docker Compose** (optional, for containerized deployment)
+
+### Verify Python version
+
+```bash
+python --version
+# Python 3.12.0 or higher
+```
+
+<Warning>
+Python 3.10 and below are not supported. Upgrade to 3.12+ before proceeding.
+</Warning>
+
+## Install uv package manager
+
+We recommend using **uv** for dependency management. It's significantly faster than pip and handles lock files automatically.
+
+<CodeGroup>
+```bash macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+```bash Windows (PowerShell)
+irm https://astral.sh/uv/install.ps1 | iex
+```
+
+```bash Alternative (pip)
+pip install uv
+```
+</CodeGroup>
+
+Verify installation:
+
+```bash
+uv --version
+# uv 0.1.0 or higher
+```
+
+## Clone the repository
+
+```bash
+git clone https://github.com/JoAmps/rgt-assignment.git
+cd rgt-assignment
+```
+
+## Set up virtual environment
+
+Create and activate a Python virtual environment:
+
+<CodeGroup>
+```bash macOS/Linux
+python -m venv .venv
+source .venv/bin/activate
+```
+
+```bash Windows (PowerShell)
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+```bash Windows (cmd)
+python -m venv .venv
+.venv\Scripts\activate.bat
+```
+</CodeGroup>
+
+Your prompt should now show `(.venv)` prefix, indicating the virtual environment is active.
+
+## Install dependencies
+
+With your virtual environment activated, install all required packages:
+
+```bash
+uv sync
+```
+
+This reads `pyproject.toml` and installs:
+
+- **FastAPI** (0.128.0+) — Web framework
+- **LangChain** (1.2.7+) — LLM orchestration
+- **LangChain integrations** — OpenAI, Chroma, Unstructured
+- **ChromaDB** (1.4.1+) — Vector database
+- **OpenAI** (2.16.0+) — Embeddings and LLM client
+- **scikit-learn** (1.8.0+) — ML models
+- **pandas** (3.0.0+) — Data processing
+- **pytest** (9.0.2+) — Testing framework
+- **Development tools** — black, flake8, mypy, isort
+
+<Info>
+`uv sync` creates a lock file for reproducible installs. Use `uv sync --locked` in CI/CD to ensure exact versions.
+</Info>
+
+### Dependencies reference
+
+Here's the complete dependency list from `pyproject.toml`:
+
+```toml pyproject.toml
+[project]
+name = "rgt"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "autoflake>=2.3.1",
+    "autopep8>=2.3.2",
+    "black>=26.1.0",
+    "chromadb>=1.4.1",
+    "fastapi>=0.128.0",
+    "flake8>=7.3.0",
+    "isort>=7.0.0",
+    "joblib>=1.5.3",
+    "langchain>=1.2.7",
+    "langchain-chroma>=1.1.0",
+    "langchain-openai>=1.1.7",
+    "langchain-text-splitters>=1.1.0",
+    "langchain-unstructured>=1.0.1",
+    "mypy>=1.19.1",
+    "openai>=2.16.0",
+    "pandas>=3.0.0",
+    "pytest>=9.0.2",
+    "python-dotenv>=1.2.1",
+    "scikit-learn>=1.8.0",
+    "seaborn>=0.13.2",
+    "unstructured>=0.18.31",
+]
+```
+
+## Configure environment variables
+
+The RAG Support System requires API keys for OpenAI and Unstructured services.
+
+### Create .env file
+
+Create a `.env` file in the project root:
+
+```bash
+touch .env
+```
+
+Add your API keys:
+
+```env .env
+OPENAI_API_KEY=sk-proj-...
+UNSTRUCTURED_API_KEY=your_unstructured_api_key
+```
+
+<Warning>
+**Security best practices:**
+- Never commit `.env` to version control
+- Add `.env` to `.gitignore`
+- Use different keys for development and production
+- Rotate keys regularly
+- Use secret management services (AWS Secrets Manager, Vault) in production
+</Warning>
+
+### Get API keys
+
+<Steps>
+  <Step title="OpenAI API key">
+    1. Sign up at [platform.openai.com](https://platform.openai.com)
+    2. Navigate to API keys section
+    3. Create a new secret key
+    4. Copy and paste into `.env` as `OPENAI_API_KEY`
+    
+    <Info>
+    The system uses:
+    - `text-embedding-3-small` for embeddings (~$0.02 per 1M tokens)
+    - `gpt-4.1` for generation (configured in `src/rag/retriever.py:35`)
+    </Info>
+  </Step>
+  
+  <Step title="Unstructured API key">
+    1. Sign up at [unstructured.io](https://unstructured.io)
+    2. Get your API key from the dashboard
+    3. Add to `.env` as `UNSTRUCTURED_API_KEY`
+    
+    <Info>
+    Unstructured parses markdown files into structured elements during document ingestion. Used in `src.rag.ingest` module.
+    </Info>
+  </Step>
+</Steps>
+
+### Environment variable loading
+
+The system loads environment variables using `python-dotenv`. Here's how it works (from `src/config.py`):
+
+```python config.py
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # Reads .env from project root
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+UNSTRUCTURED_API_KEY = os.getenv("UNSTRUCTURED_API_KEY")
+
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY not found in environment")
+```
+
+## Verify installation
+
+Run the test suite to verify everything is installed correctly:
+
+```bash
+pytest -q
+```
+
+Expected output:
+
+```
+........................                                                  [100%]
+24 passed in 2.34s
+```
+
+<Info>
+Tests mock external services (OpenAI, Chroma, Unstructured) so they run offline without API keys.
+</Info>
+
+### Run specific tests
+
+```bash
+# Verbose output with print statements
+pytest -s -v tests/
+
+# Single test file
+pytest tests/test_retriever.py -q
+
+# Single test function
+pytest tests/test_retriever.py::test_search_and_answer -v
+```
+
+## Optional: Train ML models
+
+The system includes triage ML models for category and priority prediction. Train them before making RAG queries:
+
+```bash
+uv run -m src.ml.train
+```
+
+This:
+- Reads training data from `tickets_train.csv`
+- Trains TF-IDF + Logistic Regression classifiers
+- Saves models to `artifacts/category_model.pkl` and `artifacts/priority_model.pkl`
+- Generates classification reports in `reports/`
+
+<Info>
+Models are loaded automatically by the API at startup (see `src/api/routes/triage_route.py:12-20`).
+</Info>
+
+## Optional: Docker setup
+
+For containerized deployment, use Docker Compose:
+
+```bash
+# Build and start containers
+docker-compose up --build
+
+# Run in detached mode
+docker-compose up -d
+
+# Stop containers
+docker-compose down
+```
+
+The Docker setup includes:
+- FastAPI application container
+- Chroma vector database (if configured in `docker-compose.yml`)
+- Volume mounts for persistent data
+
+<Note>
+Docker configuration is in `Dockerfile` and `docker-compose.yml` at project root.
+</Note>
+
+## Directory structure
+
+After installation, your project should look like this:
+
+```
+rgt-assignment/
+├── .venv/                    # Virtual environment (gitignored)
+├── .env                      # API keys (gitignored)
+├── src/
+│   ├── api/                  # FastAPI routes, models, services
+│   │   ├── routes/           # Endpoint definitions
+│   │   ├── services/         # Business logic
+│   │   └── models.py         # Pydantic request/response models
+│   ├── rag/                  # RAG agent, ingestion, evaluation
+│   │   ├── retriever.py      # Core RAG agent
+│   │   ├── ingest.py         # Document ingestion
+│   │   ├── prompts.py        # Prompt templates
+│   │   └── evals.py          # Evaluation framework
+│   ├── ml/                   # Triage ML models
+│   │   ├── train.py          # Training script
+│   │   └── predict.py        # Inference helper
+│   └── config.py             # Environment configuration
+├── tests/                    # Unit tests
+├── artifacts/                # Trained models (created after training)
+├── reports/                  # Evaluation outputs (created after evals)
+├── chroma_db/                # Vector store data (created after ingestion)
+├── kb_docs/                  # Knowledge base markdown files
+├── main.py                   # FastAPI application entrypoint
+├── pyproject.toml            # Dependencies and project metadata
+├── README.md                 # Project overview
+└── ARCHITECTURE.md           # System design documentation
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Follow the quickstart" icon="rocket" href="/quickstart">
+    Ingest documents and make your first RAG query
+  </Card>
+  
+  <Card title="Understand the architecture" icon="diagram-project" href="/architecture">
+    Learn how system components work together
+  </Card>
+  
+  <Card title="Explore API endpoints" icon="code" href="/api/overview">
+    Read endpoint specifications and examples
+  </Card>
+  
+  <Card title="Run evaluations" icon="chart-line">
+    Test answer quality with offline metrics:
+    ```bash
+    python -m src.rag.evals
+    ```
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="pip install errors">
+    If you encounter build errors, upgrade pip and setuptools:
+    ```bash
+    pip install --upgrade pip setuptools wheel
+    ```
+    Then retry `uv sync`.
+  </Accordion>
+  
+  <Accordion title="Python version conflicts">
+    Check your Python version matches requirements:
+    ```bash
+    python --version
+    ```
+    If using pyenv or conda, ensure you've selected Python 3.12+:
+    ```bash
+    pyenv local 3.12.0
+    # or
+    conda activate py312
+    ```
+  </Accordion>
+  
+  <Accordion title="ModuleNotFoundError">
+    Ensure your virtual environment is activated:
+    ```bash
+    source .venv/bin/activate  # macOS/Linux
+    .venv\Scripts\activate     # Windows
+    ```
+    Verify packages are installed:
+    ```bash
+    pip list | grep langchain
+    ```
+  </Accordion>
+  
+  <Accordion title="OpenAI rate limits">
+    If you hit rate limits during testing:
+    - Use a lower tier of OpenAI API key
+    - Implement exponential backoff (already handled by LangChain)
+    - Add `time.sleep()` between batch operations
+    - Consider caching embeddings
+  </Accordion>
+  
+  <Accordion title="Chroma database locked errors">
+    If Chroma throws "database is locked" errors:
+    ```bash
+    # Stop all Python processes
+    pkill -9 python
+    
+    # Remove lock files
+    rm chroma_db/*.lock
+    
+    # Restart API server
+    uv run main.py
+    ```
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,223 @@
+---
+title: RAG Pipeline
+description: Understand the end-to-end retrieval-augmented generation flow in the support system
+---
+
+The RAG (Retrieval-Augmented Generation) pipeline is the core of the support system's answer generation capability. It combines semantic search with large language model generation to produce grounded, contextual responses.
+
+## Architecture Overview
+
+The `SimpleRetrievalAgent` orchestrates three main phases:
+
+1. **Retrieve** - Semantic search over the knowledge base
+2. **Generate** - LLM-based answer synthesis
+3. **Format** - Structured output with citations and metadata
+
+<Note>
+The pipeline only generates answers when relevant context is found. If no chunks are retrieved, it returns a fallback message and flags the case for human review.
+</Note>
+
+## Phase 1: Retrieval
+
+The retrieval phase uses Chroma vector store to find relevant document chunks based on semantic similarity.
+
+```python
+def retrieve(
+    self,
+    query: str,
+    predicted_category: str,
+    k: int = 5,
+) -> List[Dict]:
+    """
+    Retrieve top-K relevant chunks from the vector store.
+    """
+    filters = {"category": predicted_category}
+
+    results = self.vectordb.similarity_search_with_relevance_scores(
+        query,
+        k=k,
+        filter=filters,
+    )
+
+    return [
+        {
+            "content": doc.page_content,
+            "score": score,
+            "metadata": doc.metadata,
+        }
+        for doc, score in results
+    ]
+```
+
+<Info>
+Retrieval is filtered by the predicted category from the triage model, ensuring domain-relevant results.
+</Info>
+
+### Configuration
+
+The system uses OpenAI's `text-embedding-3-small` model for embeddings:
+
+```python
+def build_embeddings() -> OpenAIEmbeddings:
+    """Create embeddings client."""
+    return OpenAIEmbeddings(
+        model="text-embedding-3-small",
+        openai_api_key=OPENAI_API_KEY,
+    )
+```
+
+## Phase 2: Generation
+
+The generation phase uses GPT-4.1 to synthesize a grounded answer from retrieved context.
+
+```python
+def generate_answer(
+    self,
+    context: str,
+    query: str,
+    predicted_category: str,
+    priority: str,
+) -> str:
+    """
+    Generate a grounded answer from retrieved context.
+    """
+    prompt = generate_prompt(
+        predicted_category,
+        context,
+        query,
+        priority,
+    )
+
+    return self.llm.invoke([HumanMessage(content=prompt)]).content
+```
+
+<Warning>
+The LLM temperature is set to 0.0 for maximum consistency in support responses.
+</Warning>
+
+### LLM Configuration
+
+```python
+DEFAULT_LLM_MODEL = "gpt-4.1"
+DEFAULT_TEMPERATURE = 0.0
+
+def build_llm() -> ChatOpenAI:
+    """Create LLM client."""
+    return ChatOpenAI(
+        api_key=OPENAI_API_KEY,
+        model_name=DEFAULT_LLM_MODEL,
+        temperature=DEFAULT_TEMPERATURE,
+    )
+```
+
+## Phase 3: Formatting
+
+The final phase structures the output with citations, internal next steps, and review flags.
+
+```python
+def format_response(
+    self,
+    answer: str,
+    internal_next_steps: List[str],
+    chunks: List[Dict],
+    needs_human_review: bool,
+) -> Dict:
+    """
+    Build the final structured response.
+    """
+    citations = [
+        {
+            "document_name": c["metadata"].get("filename", "unknown"),
+            "chunk_id": c["metadata"].get("element_id"),
+            "snippet": c["content"][:35],
+            "full_content": c["content"],
+        }
+        for c in chunks
+    ]
+
+    return {
+        "draft_reply": answer,
+        "internal_next_steps": internal_next_steps,
+        "citations": citations,
+        "needs_human_review": needs_human_review,
+    }
+```
+
+## End-to-End Flow
+
+The `answer()` method orchestrates all three phases:
+
+```python
+def answer(
+    self,
+    query: str,
+    predicted_category: str,
+    priority: str,
+    confidence: Dict[str, float],
+    k: int = 5,
+) -> Dict:
+    """
+    End-to-end RAG pipeline.
+    """
+    # Phase 1: Retrieve
+    chunks = self.retrieve(
+        query,
+        predicted_category=predicted_category,
+        k=k,
+    )
+
+    if not chunks:
+        return {
+            "draft_reply": "Insufficient context. Please clarify your request.",
+            "internal_next_steps": [],
+            "citations": [],
+            "needs_human_review": True,
+        }
+
+    context_text = "\n\n".join(c["content"] for c in chunks)
+
+    # Phase 2: Generate
+    answer = self.generate_answer(
+        context=context_text,
+        query=query,
+        predicted_category=predicted_category,
+        priority=priority,
+    )
+
+    internal_next_steps = generate_internal_next_steps(
+        context=context_text,
+        query=query,
+    )
+
+    # Determine review flag
+    needs_human_review = (
+        confidence.get("category", 0) < CATEGORY_CONF_THRESHOLD
+        or confidence.get("priority", 0) < PRIORITY_CONF_THRESHOLD
+    )
+
+    # Phase 3: Format
+    return self.format_response(
+        answer=answer,
+        internal_next_steps=internal_next_steps,
+        chunks=chunks,
+        needs_human_review=needs_human_review,
+    )
+```
+
+<Card title="Confidence Thresholds" icon="gauge">
+Responses are flagged for human review when category confidence < 0.5 or priority confidence < 0.5.
+</Card>
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="Triage Models" icon="brain" href="/concepts/triage-models">
+    Learn how category and priority are predicted
+  </Card>
+  <Card title="Knowledge Base" icon="database" href="/concepts/knowledge-base">
+    Explore document ingestion and vector storage
+  </Card>
+  <Card title="Structured Outputs" icon="list" href="/concepts/structured-outputs">
+    Understand citations and internal next steps
+  </Card>
+</CardGroup>

@@ -1,0 +1,129 @@
+---
+title: RAG Support System
+description: A production-ready Retrieval-Augmented Generation system for intelligent customer support with ML triage, semantic retrieval, and LLM-based answer generation
+---
+
+Welcome to the RAG Support System documentation. This system combines semantic retrieval over an indexed knowledge base with LLM-based generation to produce grounded, cited answers while mitigating hallucinations and adversarial inputs.
+
+## What is the RAG Support System?
+
+The RAG Support System is an AI-powered customer support platform that:
+
+- **Retrieves** relevant documentation from a vector store (Chroma) using semantic search
+- **Triages** incoming tickets with ML models to predict category and priority
+- **Generates** grounded, cited answers using large language models
+- **Evaluates** answer quality with offline faithfulness and relevance metrics
+- **Flags** low-confidence cases for human review
+
+Built with Python, FastAPI, LangChain, Chroma, and OpenAI, the system prioritizes correctness, modularity, and production readiness.
+
+## Core capabilities
+
+<CardGroup cols={2}>
+  <Card title="Semantic retrieval" icon="magnifying-glass">
+    Vector-based search over your knowledge base using OpenAI embeddings and Chroma for fast, relevant results
+  </Card>
+  
+  <Card title="ML-powered triage" icon="filter">
+    Automatic classification of support tickets by category and priority with confidence scoring
+  </Card>
+  
+  <Card title="Grounded answers" icon="quote-right">
+    LLM-generated responses with citations and internal next steps, backed by retrieved context
+  </Card>
+  
+  <Card title="Production safeguards" icon="shield-check">
+    Prompt injection protection, adversarial testing, and human-in-the-loop workflows for uncertain cases
+  </Card>
+</CardGroup>
+
+## Key features
+
+- **Document ingestion** — Chunk and embed markdown files into Chroma with configurable chunking strategies
+- **RAG agent** — Retrieval-augmented generation pipeline with category-aware filtering and low-latency responses
+- **Triage models** — TF-IDF + Logistic Regression models for category and priority prediction
+- **Structured outputs** — JSON-formatted citations, internal next steps, and review flags
+- **Offline evaluation** — Relevance, faithfulness, and adversarial robustness testing with audit-ready reports
+- **FastAPI endpoints** — Production-ready HTTP API for ingestion, question answering, and triage
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Go from zero to your first RAG query in under 5 minutes
+  </Card>
+  
+  <Card title="Installation" icon="download" href="/installation">
+    Set up Python, dependencies, and environment variables
+  </Card>
+  
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand system components and request flow
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore endpoints, request models, and examples
+  </Card>
+</CardGroup>
+
+## Architecture overview
+
+The system follows a modular architecture with clear separation of concerns:
+
+```
+Client Request
+      ↓
+  FastAPI Layer (validation, routing)
+      ↓
+  Triage Service (category + priority prediction)
+      ↓
+  RAG Service (embed query → retrieve chunks → generate answer)
+      ↓
+  Response (draft_reply, citations, internal_next_steps, needs_human_review)
+```
+
+See the [Architecture](/architecture) page for detailed component descriptions and request flow diagrams.
+
+## Design principles
+
+The RAG Support System is built on these core principles:
+
+1. **Correctness first** — Answers must be supported by retrieved knowledge; hallucinations are unacceptable
+2. **Modularity** — Retrieval, generation, and evaluation are independently testable
+3. **Cost awareness** — Predictable and controllable LLM usage with bounded retrieval and caching
+4. **Security** — Resilience against prompt injection and misuse with explicit refusal behavior
+5. **Production readiness** — Observable, scalable, and maintainable with structured logging and metrics
+
+<Note>
+This system prioritizes faithfulness over creativity. Lower temperature and constrained prompts reduce expressive freedom but eliminate hallucinations in support contexts.
+</Note>
+
+## Technology stack
+
+- **Python 3.12+** — Core language with type hints and async support
+- **FastAPI** — High-performance API framework with automatic OpenAPI docs
+- **LangChain** — LLM orchestration and document processing
+- **Chroma** — Vector database for semantic search
+- **OpenAI** — Embeddings (text-embedding-3-small) and LLM (GPT-4.1)
+- **scikit-learn** — ML models for triage classification
+- **uv** — Fast Python package installer and dependency manager
+
+## Next steps
+
+<Steps>
+  <Step title="Follow the quickstart">
+    Install dependencies, ingest documents, and make your first RAG query in minutes
+  </Step>
+  
+  <Step title="Read the architecture guide">
+    Understand how the system components work together
+  </Step>
+  
+  <Step title="Explore the API reference">
+    Learn about available endpoints and request/response models
+  </Step>
+  
+  <Step title="Run evaluations">
+    Test answer quality with offline metrics and adversarial robustness checks
+  </Step>
+</Steps>

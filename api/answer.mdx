@@ -1,0 +1,118 @@
+---
+title: POST /answer
+description: Query the RAG system for intelligent ticket answers
+---
+
+The `/answer` endpoint processes support tickets through the RAG system, combining ML triage classification with retrieval-augmented generation to provide comprehensive, citation-backed answers.
+
+## Endpoint
+
+```
+POST /api/v1/answer
+```
+
+## Request Body
+
+<ParamField path="subject" type="string" required>
+  The subject line of the support ticket
+</ParamField>
+
+<ParamField path="body" type="string" required>
+  The full body/description of the support ticket
+</ParamField>
+
+<ParamField path="user_question" type="string">
+  Optional specific question from the user. If not provided, the system will generate an answer based on the subject and body.
+</ParamField>
+
+## Response
+
+<ResponseField name="triage" type="object" required>
+  ML triage classification results
+  
+  <Expandable title="properties">
+    <ResponseField name="category" type="string">
+      Predicted ticket category
+    </ResponseField>
+    
+    <ResponseField name="priority" type="string">
+      Predicted ticket priority level
+    </ResponseField>
+    
+    <ResponseField name="confidence" type="object">
+      Confidence scores for predictions
+      
+      <Expandable title="properties">
+        <ResponseField name="category" type="float">
+          Confidence score for category prediction (0-1)
+        </ResponseField>
+        
+        <ResponseField name="priority" type="float">
+          Confidence score for priority prediction (0-1)
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="draft_reply" type="string" required>
+  AI-generated draft response to send to the customer
+</ResponseField>
+
+<ResponseField name="internal_next_steps" type="array" required>
+  List of recommended next steps for internal support team
+</ResponseField>
+
+<ResponseField name="citations" type="array" required>
+  Source documents and snippets used to generate the answer
+  
+  <Expandable title="properties">
+    <ResponseField name="document_name" type="string">
+      Name of the source document
+    </ResponseField>
+    
+    <ResponseField name="chunk_id" type="string">
+      Unique identifier for the document chunk
+    </ResponseField>
+    
+    <ResponseField name="snippet" type="string">
+      Relevant excerpt from the document
+    </ResponseField>
+    
+    <ResponseField name="full_content" type="string">
+      Complete content of the document chunk
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="needs_human_review" type="boolean" required>
+  Flag indicating whether the ticket requires human review before responding
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/answer" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Refund issue",
+    "body": "I was charged twice",
+    "user_question": "Can I get a refund?"
+  }'
+```
+
+## How It Works
+
+The `/answer` endpoint performs the following operations:
+
+1. **Triage Classification** - Predicts the ticket category and priority using ML models
+2. **Document Retrieval** - Searches the knowledge base for relevant information
+3. **Answer Generation** - Uses an LLM to generate a structured response with:
+   - Customer-facing draft reply
+   - Internal next steps for support agents
+   - Citations from source documents
+   - Human review flag based on confidence scores
+
+<Note>
+Ensure documents have been ingested into the knowledge base using the `/ingest` endpoint before querying for answers.
+</Note>

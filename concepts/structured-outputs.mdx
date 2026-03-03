@@ -1,0 +1,342 @@
+---
+title: Structured Outputs
+description: Understand citations, internal next steps, and human review flags in generated responses
+---
+
+The RAG system produces structured outputs that go beyond simple text generation. Every response includes citations, actionable internal steps, and intelligent review flags to support human-in-the-loop workflows.
+
+## Output Schema
+
+Generated responses follow a consistent structure:
+
+```json
+{
+  "draft_reply": "Customer-facing answer text",
+  "internal_next_steps": [
+    "Verify the user's account status",
+    "Check recent billing transactions"
+  ],
+  "citations": [
+    {
+      "document_name": "billing_policy.md",
+      "chunk_id": "3",
+      "snippet": "Refunds typically take 5-7 busi...",
+      "full_content": "Refunds typically take 5-7 business days to process..."
+    }
+  ],
+  "needs_human_review": false
+}
+```
+
+<Info>
+This structured format enables seamless integration with ticketing systems and support dashboards.
+</Info>
+
+## Component 1: Citations
+
+Citations provide transparency and traceability by linking answers to source documents.
+
+### Citation Structure
+
+```python
+def format_response(
+    self,
+    answer: str,
+    internal_next_steps: List[str],
+    chunks: List[Dict],
+    needs_human_review: bool,
+) -> Dict:
+    """
+    Build the final structured response.
+    """
+    citations = [
+        {
+            "document_name": c["metadata"].get("filename", "unknown"),
+            "chunk_id": c["metadata"].get("element_id"),
+            "snippet": c["content"][:35],
+            "full_content": c["content"],
+        }
+        for c in chunks
+    ]
+
+    return {
+        "draft_reply": answer,
+        "internal_next_steps": internal_next_steps,
+        "citations": citations,
+        "needs_human_review": needs_human_review,
+    }
+```
+
+<Note>
+Snippets are truncated to 35 characters for preview, while full content is preserved for verification.
+</Note>
+
+### Why Citations Matter
+
+<CardGroup cols={2}>
+  <Card title="Verification" icon="check-circle">
+    Support agents can validate answer accuracy
+  </Card>
+  <Card title="Transparency" icon="eye">
+    Customers can request source documentation
+  </Card>
+  <Card title="Compliance" icon="shield">
+    Audit trails for regulated industries
+  </Card>
+  <Card title="Debugging" icon="bug">
+    Identify outdated or incorrect knowledge base entries
+  </Card>
+</CardGroup>
+
+## Component 2: Internal Next Steps
+
+Internal next steps provide actionable guidance for support agents.
+
+### Generation with Structured LLM Outputs
+
+```python
+def generate_internal_next_steps(
+    context: str,
+    query: str,
+) -> List[str]:
+    """
+    Generate structured internal next steps based on retrieved context.
+
+    Args:
+        context: Retrieved document content.
+        query: User question or ticket content.
+
+    Returns:
+        List of recommended internal next steps.
+    """
+    llm = _build_llm()
+
+    agent = create_agent(
+        model=llm,
+        response_format=InternalNextSteps,
+        system_prompt=generate_internal_steps(context, query),
+    )
+
+    result = agent.invoke({"messages": [HumanMessage(content=query)]})
+
+    return result["structured_response"].steps
+```
+
+### Pydantic Schema Enforcement
+
+The output format is strictly enforced using Pydantic:
+
+```python
+class InternalNextSteps(BaseModel):
+    """
+    Structured internal actions for support workflows.
+
+    Used for:
+    - operational follow-ups
+
+    Guarantees:
+    - Ordered list of concise, actionable steps
+    """
+
+    steps: List[str] = Field(
+        ...,
+        description="Actionable internal next steps, expressed as short bullet points",
+        example=[
+            "Verify the user's account status",
+            "Check recent billing transactions",
+        ],
+    )
+```
+
+<Warning>
+The LLM is constrained to return only valid JSON matching the `InternalNextSteps` schema.
+</Warning>
+
+### Example Output
+
+For a billing refund query:
+
+```python
+[
+    "Verify the user's account status",
+    "Check recent billing transactions",
+    "Confirm refund eligibility based on purchase date",
+    "Escalate to finance team if amount exceeds $500"
+]
+```
+
+## Component 3: Human Review Flag
+
+The `needs_human_review` flag indicates when automated responses may be unreliable.
+
+### Confidence-Based Flagging
+
+```python
+CATEGORY_CONF_THRESHOLD = 0.5
+PRIORITY_CONF_THRESHOLD = 0.5
+
+needs_human_review = (
+    confidence.get("category", 0) < CATEGORY_CONF_THRESHOLD
+    or confidence.get("priority", 0) < PRIORITY_CONF_THRESHOLD
+)
+```
+
+<Info>
+Tickets are flagged when category confidence < 0.5 OR priority confidence < 0.5.
+</Info>
+
+### Additional Flagging Conditions
+
+The system also flags cases with insufficient context:
+
+```python
+if not chunks:
+    return {
+        "draft_reply": "Insufficient context. Please clarify your request.",
+        "internal_next_steps": [],
+        "citations": [],
+        "needs_human_review": True,
+    }
+```
+
+<Warning>
+When no relevant chunks are retrieved, the response is automatically flagged for review.
+</Warning>
+
+## Additional Structured Outputs
+
+The system also includes verification utilities:
+
+### Faithfulness Verification
+
+Check if answers are grounded in retrieved context:
+
+```python
+def verify_faithfulness(
+    answer: str,
+    chunks: List[Dict],
+) -> bool:
+    """
+    Verify that an answer is supported by retrieved document chunks.
+
+    Returns:
+        True if the answer is grounded in the retrieved context.
+    """
+    if not chunks:
+        return False
+
+    context_text = "\n\n".join(chunk["content"] for chunk in chunks)
+    llm = _build_llm()
+
+    agent = create_agent(
+        model=llm,
+        response_format=Verification,
+        system_prompt=faithfulness_prompt(context_text, answer),
+    )
+
+    response = agent.invoke({"messages": [HumanMessage(content=answer)]})
+    return response["structured_response"].response
+```
+
+### Verification Schema
+
+```python
+class Verification(BaseModel):
+    """
+    Binary verification result used for evaluation tasks.
+
+    Used by:
+    - faithfulness checks
+    - adversarial robustness tests
+
+    The output is intentionally minimal to reduce ambiguity.
+    """
+
+    response: Literal["Yes", "No"] = Field(
+        ...,
+        description="Binary verification result",
+        example="Yes",
+    )
+```
+
+<Note>
+Verification uses a binary Yes/No format to minimize ambiguity in LLM responses.
+</Note>
+
+### Document Classification
+
+Structured output for categorizing documents during ingestion:
+
+```python
+class DocumentCategory(BaseModel):
+    """
+    Canonical category assigned to a support document or ticket.
+
+    The value MUST match exactly one of the predefined categories.
+    """
+
+    category: Literal[
+        "Account & Subscription",
+        "Authentication & Access",
+        "Billing & Payments",
+        "Bugs & Errors",
+        "Data Export & Reporting",
+        "Feature Request",
+        "Integrations & API",
+        "Performance & Reliability",
+        "Security & Compliance",
+    ] = Field(
+        ...,
+        description="Single, canonical support category",
+        example="Billing & Payments",
+    )
+```
+
+<Info>
+Literal types ensure LLM outputs exactly match predefined categories.
+</Info>
+
+## Integration Example
+
+Putting it all together in the RAG pipeline:
+
+```python
+response = agent.answer(
+    query="How long does a refund take?",
+    predicted_category="billing",
+    priority="medium",
+    confidence={"category": 0.92, "priority": 0.87},
+)
+
+# Response structure:
+# {
+#   "draft_reply": "Refunds typically process within 5-7 business days...",
+#   "internal_next_steps": [
+#     "Verify account status",
+#     "Check recent transactions"
+#   ],
+#   "citations": [
+#     {
+#       "document_name": "billing_policy.md",
+#       "chunk_id": "3",
+#       "snippet": "Refunds typically take...",
+#       "full_content": "..."
+#     }
+#   ],
+#   "needs_human_review": false
+# }
+```
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="RAG Pipeline" icon="workflow" href="/concepts/rag-pipeline">
+    See how structured outputs are generated
+  </Card>
+  <Card title="Triage Models" icon="brain" href="/concepts/triage-models">
+    Learn how confidence scores drive review flags
+  </Card>
+  <Card title="Knowledge Base" icon="database" href="/concepts/knowledge-base">
+    Understand how citations map to stored chunks
+  </Card>
+</CardGroup>

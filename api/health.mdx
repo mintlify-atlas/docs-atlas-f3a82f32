@@ -1,0 +1,67 @@
+---
+title: GET /health
+description: Check API health status
+---
+
+The `/health` endpoint provides a simple health check to verify that the API is running and responsive.
+
+## Endpoint
+
+```
+GET /api/v1/health
+```
+
+## Request
+
+No request body or parameters required.
+
+## Response
+
+<ResponseField name="status" type="string" required>
+  Health status of the API. Returns "ok" when the service is healthy.
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/health"
+```
+
+## Example Response
+
+```json
+{
+  "status": "ok"
+}
+```
+
+## Use Cases
+
+The health endpoint is useful for:
+
+- **Monitoring** - Integrate with uptime monitoring tools (Pingdom, UptimeRobot, etc.)
+- **Load balancers** - Configure health checks for load balancer routing
+- **Orchestration** - Kubernetes liveness and readiness probes
+- **CI/CD** - Verify deployment success in automated pipelines
+- **Development** - Quick check that the server is running during development
+
+## Docker Health Check
+
+The health endpoint is used in the Docker configuration for container health monitoring:
+
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+```
+
+## Status Codes
+
+- **200 OK** - Service is healthy and operational
+- **500 Internal Server Error** - Service is experiencing issues
+
+<Tip>
+For production deployments, consider implementing more detailed health checks that verify database connectivity and external service availability.
+</Tip>

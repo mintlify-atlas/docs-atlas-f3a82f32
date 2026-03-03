@@ -1,0 +1,69 @@
+---
+title: Request Models
+description: API request models for the RAG Support System
+---
+
+All request models are defined using Pydantic and validate incoming data automatically.
+
+## TriageRequest
+
+Used to triage support tickets and determine their category and priority.
+
+<ParamField path="subject" type="string" required>
+  The subject line of the support ticket
+</ParamField>
+
+<ParamField path="body" type="string" required>
+  The main content/body of the support ticket
+</ParamField>
+
+### Example
+
+```json
+{
+  "subject": "Unable to login to my account",
+  "body": "I've been trying to login for the past hour but keep getting an error message saying 'Invalid credentials' even though I'm sure my password is correct."
+}
+```
+
+## AnswerRequest
+
+Used to generate a comprehensive answer with triage, draft reply, and citations.
+
+<ParamField path="subject" type="string" required>
+  The subject line of the support ticket
+</ParamField>
+
+<ParamField path="body" type="string" required>
+  The main content/body of the support ticket
+</ParamField>
+
+<ParamField path="user_question" type="string">
+  Optional clarifying question or additional context from the user
+</ParamField>
+
+### Example
+
+```json
+{
+  "subject": "How do I reset my password?",
+  "body": "I forgot my password and can't access the reset link in my email.",
+  "user_question": "Can I reset it via phone instead?"
+}
+```
+
+## IngestRequest
+
+Used to ingest new documents into the knowledge base.
+
+<ParamField path="filepath" type="string" required>
+  The path to the file to be ingested into the knowledge base
+</ParamField>
+
+### Example
+
+```json
+{
+  "filepath": "/documents/support-guide-v2.pdf"
+}
+```

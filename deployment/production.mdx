@@ -1,0 +1,681 @@
+---
+title: Production deployment
+description: Best practices for deploying the RAG Support System in production environments
+---
+
+This guide covers production deployment strategies, monitoring, security, and scaling considerations for the RAG Support System.
+
+## Production architecture
+
+The system is designed for production deployment with these characteristics:
+
+- **Stateless API**: Horizontally scalable FastAPI application
+- **External dependencies**: Chroma vector store, OpenAI API, Unstructured API
+- **Persistent data**: Models, vector database, evaluation reports
+- **Async-ready**: Uses `async def` for non-blocking I/O operations
+
+## Deployment options
+
+<Tabs>
+  <Tab title="Kubernetes">
+    **Recommended for:** Enterprise deployments with auto-scaling needs
+
+    **Sample deployment:**
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: rag-api
+    spec:
+      replicas: 3
+      selector:
+        matchLabels:
+          app: rag-api
+      template:
+        metadata:
+          labels:
+            app: rag-api
+        spec:
+          containers:
+          - name: api
+            image: your-registry/rag-api:latest
+            ports:
+            - containerPort: 8000
+            env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rag-secrets
+                  key: openai-key
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "500m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+            livenessProbe:
+              httpGet:
+                path: /api/v1/health
+                port: 8000
+              initialDelaySeconds: 30
+              periodSeconds: 10
+            readinessProbe:
+              httpGet:
+                path: /api/v1/health
+                port: 8000
+              initialDelaySeconds: 10
+              periodSeconds: 5
+    ```
+
+    **Service:**
+    ```yaml
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: rag-api-service
+    spec:
+      type: LoadBalancer
+      selector:
+        app: rag-api
+      ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 8000
+    ```
+  </Tab>
+
+  <Tab title="Cloud Run (GCP)">
+    **Recommended for:** Serverless deployments with automatic scaling
+
+    ```bash
+    # Build and push to GCP Container Registry
+    gcloud builds submit --tag gcr.io/PROJECT_ID/rag-api
+
+    # Deploy to Cloud Run
+    gcloud run deploy rag-api \
+      --image gcr.io/PROJECT_ID/rag-api \
+      --platform managed \
+      --region us-central1 \
+      --set-env-vars OPENAI_API_KEY=secretRef:openai-key \
+      --allow-unauthenticated \
+      --memory 1Gi \
+      --cpu 2 \
+      --min-instances 1 \
+      --max-instances 10
+    ```
+  </Tab>
+
+  <Tab title="AWS ECS">
+    **Recommended for:** AWS-native deployments
+
+    **Task definition:**
+    ```json
+    {
+      "family": "rag-api",
+      "networkMode": "awsvpc",
+      "requiresCompatibilities": ["FARGATE"],
+      "cpu": "1024",
+      "memory": "2048",
+      "containerDefinitions": [
+        {
+          "name": "rag-api",
+          "image": "your-ecr-repo/rag-api:latest",
+          "portMappings": [
+            {
+              "containerPort": 8000,
+              "protocol": "tcp"
+            }
+          ],
+          "secrets": [
+            {
+              "name": "OPENAI_API_KEY",
+              "valueFrom": "arn:aws:secretsmanager:region:account:secret:openai-key"
+            }
+          ],
+          "healthCheck": {
+            "command": ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"],
+            "interval": 30,
+            "timeout": 5,
+            "retries": 3
+          },
+          "logConfiguration": {
+            "logDriver": "awslogs",
+            "options": {
+              "awslogs-group": "/ecs/rag-api",
+              "awslogs-region": "us-east-1",
+              "awslogs-stream-prefix": "ecs"
+            }
+          }
+        }
+      ]
+    }
+    ```
+  </Tab>
+
+  <Tab title="Docker Swarm">
+    **Recommended for:** Simpler orchestration needs
+
+    ```yaml docker-stack.yml
+    version: '3.8'
+    services:
+      api:
+        image: your-registry/rag-api:latest
+        deploy:
+          replicas: 3
+          update_config:
+            parallelism: 1
+            delay: 10s
+          restart_policy:
+            condition: on-failure
+            delay: 5s
+            max_attempts: 3
+          resources:
+            limits:
+              cpus: '1.0'
+              memory: 1G
+            reservations:
+              cpus: '0.5'
+              memory: 512M
+        environment:
+          - OPENAI_API_KEY_FILE=/run/secrets/openai_key
+        secrets:
+          - openai_key
+          - unstructured_key
+        ports:
+          - "8000:8000"
+        healthcheck:
+          test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+          interval: 30s
+          timeout: 10s
+          retries: 3
+
+    secrets:
+      openai_key:
+        external: true
+      unstructured_key:
+        external: true
+    ```
+
+    Deploy:
+    ```bash
+    docker stack deploy -c docker-stack.yml rag-production
+    ```
+  </Tab>
+</Tabs>
+
+## Monitoring & observability
+
+<Warning>
+Production deployments **must** include comprehensive monitoring. The system generates costs per API call and can fail silently without proper observability.
+</Warning>
+
+### Metrics to track
+
+**System metrics:**
+- API response time (p50, p95, p99)
+- Request rate (requests/second)
+- Error rate (4xx, 5xx responses)
+- CPU and memory utilization
+- Container restarts
+
+**Business metrics:**
+- RAG queries per minute
+- Retrieval relevance scores
+- Triage confidence scores
+- Human review rate (`needs_human_review=true`)
+- Average citations per response
+
+**Cost metrics:**
+- OpenAI API token usage
+- Embedding API calls
+- LLM generation calls
+- Total API spend per day/week
+
+### Monitoring setup
+
+From the architecture documentation (`ARCHITECTURE.MD`):
+
+> **Monitoring & Observability**
+>
+> - Track retrieval relevance, faithfulness rate, adversarial failures, LLM latency, cost and system metrics.
+> - Use structured JSON logging and export metrics via OpenTelemetry / Prometheus.
+> - Treat periodic offline evaluations as regression tests.
+
+**Recommended stack:**
+
+<CardGroup cols={2}>
+  <Card title="Prometheus + Grafana" icon="chart-line">
+    For system metrics, API latency, and request rates
+  </Card>
+  <Card title="LangFuse / LangSmith" icon="eye">
+    For LLM-specific observability (traces, costs, quality)
+  </Card>
+  <Card title="Sentry" icon="bug">
+    For error tracking and alerting
+  </Card>
+  <Card title="CloudWatch / Datadog" icon="cloud">
+    For cloud-native monitoring
+  </Card>
+</CardGroup>
+
+**Sample Prometheus metrics:**
+
+```python
+from prometheus_client import Counter, Histogram, Gauge
+
+rag_requests_total = Counter(
+    'rag_requests_total',
+    'Total RAG requests',
+    ['endpoint', 'status']
+)
+
+rag_latency = Histogram(
+    'rag_latency_seconds',
+    'RAG request latency',
+    ['endpoint']
+)
+
+openai_tokens_used = Counter(
+    'openai_tokens_used_total',
+    'Total OpenAI tokens consumed',
+    ['model', 'type']  # type: embedding or generation
+)
+
+human_review_rate = Gauge(
+    'human_review_rate',
+    'Percentage of responses needing human review'
+)
+```
+
+### Structured logging
+
+The system uses structured logging (`src/logger.py`). Enhance for production:
+
+```python
+import structlog
+import logging
+
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.JSONRenderer()
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger()
+```
+
+Log format:
+```json
+{
+  "event": "rag_query_completed",
+  "timestamp": "2026-03-03T21:15:30.123Z",
+  "level": "info",
+  "category": "billing",
+  "priority": "high",
+  "confidence": 0.92,
+  "retrieval_docs": 5,
+  "needs_review": false,
+  "latency_ms": 1234
+}
+```
+
+## Cost controls
+
+From the architecture documentation:
+
+> **Cost Controls**
+>
+> - Enforce hard limits on `top_k` retrieval.
+> - Use embedding & retrieval caching and smaller verification models where possible.
+> - Run heavy adversarial checks offline.
+> - Even host our own open source models.
+
+### Implementation strategies
+
+<Steps>
+  <Step title="Enforce retrieval limits">
+    Set hard caps on the number of documents retrieved:
+
+    ```python
+    # In src/rag/retriever.py
+    MAX_RETRIEVAL_DOCS = 5  # Hard limit
+
+    def retrieve(self, query: str, k: int = 5):
+        k = min(k, MAX_RETRIEVAL_DOCS)  # Enforce limit
+        # ...
+    ```
+  </Step>
+
+  <Step title="Implement caching">
+    Cache embeddings for repeated queries:
+
+    ```python
+    from functools import lru_cache
+
+    @lru_cache(maxsize=1000)
+    def get_embedding(text: str) -> list[float]:
+        return embeddings_client.embed_query(text)
+    ```
+  </Step>
+
+  <Step title="Use smaller models for verification">
+    Consider using `gpt-3.5-turbo` for verification tasks:
+
+    ```python
+    verification_llm = ChatOpenAI(
+        model_name="gpt-3.5-turbo",
+        temperature=0.0
+    )
+    ```
+  </Step>
+
+  <Step title="Set up billing alerts">
+    Configure alerts in OpenAI dashboard:
+    - Daily spend threshold
+    - Monthly budget limit
+    - Unusual usage patterns
+  </Step>
+
+  <Step title="Consider self-hosted models">
+    For high-volume scenarios, deploy open-source models:
+    - **Embeddings**: `sentence-transformers/all-MiniLM-L6-v2`
+    - **Generation**: Llama 3.1, Mistral 7B
+    - **Infrastructure**: vLLM, Ollama, HuggingFace TGI
+  </Step>
+</Steps>
+
+## Security
+
+From the architecture documentation:
+
+> **Security & Safety**
+>
+> - Never implicitly trust user input; tests for prompt injection are part of the evaluation suite.
+> - Store secrets only in environment variables; never expose system prompts.
+> - Implement explicit refusal behavior for out-of-scope or unsupported requests.
+
+### Security checklist
+
+<AccordionGroup>
+  <Accordion title="Secrets management">
+    **Never store secrets in code or Docker images**
+
+    ✅ **Use:**
+    - AWS Secrets Manager / Parameter Store
+    - GCP Secret Manager
+    - Azure Key Vault
+    - Kubernetes Secrets
+    - HashiCorp Vault
+
+    ❌ **Don't:**
+    - Commit `.env` to git
+    - Hardcode API keys
+    - Copy `.env` into Docker images
+  </Accordion>
+
+  <Accordion title="Input validation">
+    **Validate all user inputs**
+
+    ```python
+    from pydantic import BaseModel, validator
+
+    class AnswerRequest(BaseModel):
+        subject: str
+        body: str
+        user_question: str | None = None
+
+        @validator('subject', 'body')
+        def validate_length(cls, v):
+            if len(v) > 10000:  # 10k char limit
+                raise ValueError('Input too long')
+            return v
+    ```
+  </Accordion>
+
+  <Accordion title="Rate limiting">
+    **Implement rate limiting per client**
+
+    ```python
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+
+    @app.post("/api/v1/answer")
+    @limiter.limit("10/minute")
+    async def answer(request: Request, ...):
+        # ...
+    ```
+  </Accordion>
+
+  <Accordion title="Network security">
+    **Restrict network access**
+
+    - Use VPC/network policies to isolate services
+    - Enable HTTPS/TLS for all external traffic
+    - Use API gateway for authentication
+    - Whitelist IP addresses if possible
+  </Accordion>
+
+  <Accordion title="Prompt injection prevention">
+    **The system includes adversarial evaluation tests**
+
+    From `src/rag/evals.py`:
+    - Tests for prompt injection attempts
+    - Out-of-scope query detection
+    - Ambiguous input handling
+
+    Run evaluations regularly:
+    ```bash
+    uv run -m src.rag.evals
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Scaling strategy
+
+From the architecture documentation:
+
+> **Scaling Strategy**
+>
+> - Application: stateless FastAPI services, horizontally scalable via containers (Docker/Kubernetes).
+> - Knowledge store: migrate to managed vector DBs as data grows.
+> - Background jobs: evaluations and retraining run in separate jobs to keep API responsive.
+> - Async: Utilize async def and await to not block the event loop for I/O workflows.
+
+### Horizontal scaling
+
+The FastAPI application is stateless and can be scaled horizontally:
+
+```bash
+# Kubernetes
+kubectl scale deployment rag-api --replicas=10
+
+# Docker Swarm
+docker service scale rag-production_api=10
+```
+
+### Vector database scaling
+
+**Current:** Local Chroma instance (`./chroma_db`)
+
+**Production options:**
+
+<CardGroup cols={2}>
+  <Card title="Chroma Cloud" icon="cloud">
+    Managed Chroma with auto-scaling
+  </Card>
+  <Card title="Pinecone" icon="database">
+    Serverless vector database
+  </Card>
+  <Card title="Weaviate" icon="server">
+    Self-hosted or cloud, supports multi-tenancy
+  </Card>
+  <Card title="Qdrant" icon="bolt">
+    High-performance vector search
+  </Card>
+</CardGroup>
+
+**Migration example (Chroma → Pinecone):**
+
+```python
+from pinecone import Pinecone
+
+pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+index = pc.Index("rag-knowledge-base")
+
+class SimpleRetrievalAgent:
+    def __init__(self):
+        self.embeddings = build_embeddings()
+        self.vectordb = index  # Use Pinecone instead of Chroma
+        self.llm = build_llm()
+```
+
+### Background jobs
+
+**Separate compute for:**
+- Model training (`src/ml/train.py`)
+- Batch predictions (`src/ml/predict.py`)
+- Offline evaluations (`src/rag/evals.py`)
+
+**Implementation:**
+```yaml
+# Kubernetes CronJob for evaluation
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rag-evaluation
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: evaluator
+            image: your-registry/rag-api:latest
+            command: ["python", "-m", "src.rag.evals"]
+          restartPolicy: OnFailure
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="High latency">
+    **Symptoms:** API responses taking >5 seconds
+
+    **Diagnosis:**
+    1. Check LLM generation time
+    2. Check vector search latency
+    3. Check network latency to OpenAI
+
+    **Solutions:**
+    - Reduce `top_k` retrieval count
+    - Use faster embedding model
+    - Enable caching
+    - Use streaming responses for LLM
+  </Accordion>
+
+  <Accordion title="Memory leaks">
+    **Symptoms:** Container memory usage increasing over time
+
+    **Diagnosis:**
+    ```bash
+    # Monitor memory
+    docker stats rag_api
+
+    # Check for large objects
+    import tracemalloc
+    tracemalloc.start()
+    # ... run application ...
+    snapshot = tracemalloc.take_snapshot()
+    top_stats = snapshot.statistics('lineno')
+    ```
+
+    **Solutions:**
+    - Clear LRU caches periodically
+    - Limit in-memory vector store size
+    - Use garbage collection
+  </Accordion>
+
+  <Accordion title="API cost spikes">
+    **Symptoms:** Unexpected OpenAI billing charges
+
+    **Diagnosis:**
+    - Check OpenAI usage dashboard
+    - Review application logs for token counts
+    - Look for retry loops or infinite recursion
+
+    **Solutions:**
+    - Implement token usage logging
+    - Set hard limits on `max_tokens`
+    - Enable caching for repeated queries
+    - Use smaller models for non-critical tasks
+  </Accordion>
+</AccordionGroup>
+
+## Deployment checklist
+
+<Steps>
+  <Step title="Pre-deployment">
+    - [ ] Environment variables configured in secrets manager
+    - [ ] Resource limits set (CPU, memory)
+    - [ ] Health checks configured
+    - [ ] Logging and monitoring enabled
+    - [ ] Rate limiting configured
+    - [ ] TLS/HTTPS enabled
+  </Step>
+
+  <Step title="Deployment">
+    - [ ] Deploy to staging environment first
+    - [ ] Run smoke tests
+    - [ ] Verify health endpoint
+    - [ ] Check logs for errors
+    - [ ] Test sample queries
+  </Step>
+
+  <Step title="Post-deployment">
+    - [ ] Monitor error rates
+    - [ ] Track API latency
+    - [ ] Review cost metrics
+    - [ ] Set up alerting rules
+    - [ ] Schedule offline evaluations
+  </Step>
+
+  <Step title="Ongoing maintenance">
+    - [ ] Review evaluation reports weekly
+    - [ ] Rotate API keys quarterly
+    - [ ] Update dependencies monthly
+    - [ ] Retrain models as needed
+    - [ ] Update knowledge base regularly
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Evaluation" icon="chart-bar" href="/guides/evaluation">
+    Set up offline evaluation pipeline
+  </Card>
+  <Card title="Training models" icon="brain" href="/guides/training-models">
+    Retrain triage models with production data
+  </Card>
+  <Card title="Docker deployment" icon="docker" href="/deployment/docker">
+    Deploy with Docker and Docker Compose
+  </Card>
+  <Card title="Environment variables" icon="key" href="/deployment/environment-variables">
+    Configure secrets and settings
+  </Card>
+</CardGroup>

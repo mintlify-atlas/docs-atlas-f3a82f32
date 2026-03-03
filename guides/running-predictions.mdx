@@ -1,0 +1,170 @@
+---
+title: Running Predictions
+description: Use trained models to classify tickets and generate predictions
+---
+
+After training your triage models, you can run batch predictions on new ticket data. This guide explains how to use the prediction script to classify tickets and export results.
+
+## Prerequisites
+
+- Trained models in `artifacts/` directory (see [Training Models](/guides/training-models))
+- Test data: `tickets_test.csv` in the project root
+- Required columns: `subject`, `body`
+
+## Prediction Command
+
+<Steps>
+  <Step title="Ensure models are trained">
+    Verify that model files exist:
+    ```bash
+    ls artifacts/
+    # Expected output:
+    # category_model.joblib
+    # priority_model.joblib
+    ```
+  </Step>
+
+  <Step title="Prepare test data">
+    Create or verify `tickets_test.csv` with at minimum these columns:
+    - `subject`: Ticket subject line
+    - `body`: Ticket description or body text
+  </Step>
+
+  <Step title="Run predictions">
+    ```bash
+    uv run -m src.ml.predict
+    ```
+
+    The script will:
+    - Load trained models from `artifacts/`
+    - Preprocess test data
+    - Run category and priority predictions
+    - Compute confidence scores
+    - Save results to CSV
+  </Step>
+
+  <Step title="Check results">
+    ```
+    Starting prediction...
+    Prediction complete.
+    ```
+
+    Results are saved to `reports/predictions.csv`.
+  </Step>
+</Steps>
+
+## Output Format
+
+The prediction script generates a CSV file with the original test data plus four additional columns:
+
+| Column | Description |
+|--------|-------------|
+| `predicted_category` | Predicted support category (e.g., "billing", "technical") |
+| `category_confidence` | Confidence score (0.0 to 1.0) for category prediction |
+| `predicted_priority` | Predicted priority level (e.g., "low", "medium", "high") |
+| `priority_confidence` | Confidence score (0.0 to 1.0) for priority prediction |
+
+### Example Output
+
+```csv
+subject,body,predicted_category,category_confidence,predicted_priority,priority_confidence
+"Billing issue","I was charged twice",billing,0.92,high,0.87
+"Login error","Cannot access my account",technical,0.88,medium,0.75
+"Feature request","Can you add dark mode?",feature_request,0.81,low,0.69
+```
+
+## How Predictions Work
+
+The prediction pipeline executes the following steps (see `src/ml/predict.py:125`):
+
+1. **Load Models**: Loads trained pipelines from `artifacts/` directory
+2. **Read Test Data**: Loads `tickets_test.csv` into a DataFrame
+3. **Preprocess**: Normalizes text (lowercase, strip whitespace, fill NaN values)
+4. **Feature Extraction**: Applies TF-IDF transformations via trained pipelines
+5. **Predict**: Generates category and priority predictions
+6. **Confidence Scores**: Computes max probability from `predict_proba`
+7. **Export**: Saves augmented DataFrame to `reports/predictions.csv`
+
+## Confidence Scores
+
+Confidence scores indicate model certainty (see `src/ml/predict.py:73`):
+
+- **High confidence (> 0.8)**: Model is very certain
+- **Medium confidence (0.5 - 0.8)**: Moderate certainty
+- **Low confidence (< 0.5)**: Uncertain prediction, may require manual review
+
+**Note:** If a model is a `ConstantPredictor` (single-class fallback), confidence is always 1.0.
+
+## Custom Prediction Paths
+
+You can customize input/output paths programmatically:
+
+```python
+from src.ml.predict import predict_and_save
+
+predict_and_save(
+    artifacts_dir="path/to/artifacts",
+    test_csv="path/to/test.csv",
+    output_file="path/to/output.csv",
+    preprocess=True
+)
+```
+
+## Using Predictions in API
+
+The trained models are automatically loaded by the `/triage` API endpoint:
+
+```bash
+curl -X POST "http://localhost:8000/triage" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Billing issue",
+    "body": "I was charged twice"
+  }'
+```
+
+Response:
+```json
+{
+  "category": "billing",
+  "priority": "high",
+  "category_confidence": 0.92,
+  "priority_confidence": 0.87
+}
+```
+
+## Preprocessing Behavior
+
+The prediction script applies lightweight preprocessing (see `src/ml/predict.py:46`):
+
+- Convert text to lowercase
+- Strip leading/trailing whitespace
+- Fill NaN values with empty strings
+
+This mirrors the training-time preprocessing to ensure consistency.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="FileNotFoundError: Model file not found">
+    Train models first using:
+    ```bash
+    uv run -m src.ml.train
+    ```
+  </Accordion>
+
+  <Accordion title="KeyError: 'subject' or 'body' column missing">
+    Ensure your test CSV has both `subject` and `body` columns. Other columns are optional.
+  </Accordion>
+
+  <Accordion title="Low confidence scores across all predictions">
+    This may indicate:
+    - Test data distribution differs from training data
+    - Models need retraining with more diverse examples
+    - Feature vocabulary mismatch
+  </Accordion>
+
+  <Accordion title="All predictions return the same value">
+    This occurs when models were trained on single-class data and fell back to `ConstantPredictor`.
+  </Accordion>
+</AccordionGroup>

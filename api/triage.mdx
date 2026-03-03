@@ -1,0 +1,99 @@
+---
+title: POST /triage
+description: Run ML triage classification on support tickets
+---
+
+The `/triage` endpoint runs machine learning models to classify support tickets by category and priority, providing confidence scores for each prediction.
+
+## Endpoint
+
+```
+POST /api/v1/triage
+```
+
+## Request Body
+
+<ParamField path="subject" type="string" required>
+  The subject line of the support ticket to classify
+</ParamField>
+
+<ParamField path="body" type="string" required>
+  The full body/description of the support ticket to classify
+</ParamField>
+
+## Response
+
+<ResponseField name="category" type="string" required>
+  The predicted category for the ticket (e.g., "Billing", "Technical Support", "Account Management")
+</ResponseField>
+
+<ResponseField name="priority" type="string" required>
+  The predicted priority level for the ticket (e.g., "High", "Medium", "Low")
+</ResponseField>
+
+<ResponseField name="confidence" type="object" required>
+  Confidence scores for each prediction
+  
+  <Expandable title="properties">
+    <ResponseField name="category" type="float">
+      Confidence score for the category prediction, ranging from 0.0 to 1.0
+    </ResponseField>
+    
+    <ResponseField name="priority" type="float">
+      Confidence score for the priority prediction, ranging from 0.0 to 1.0
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example Request
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/triage" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Cannot access my account",
+    "body": "I have been trying to log in for the past hour but keep getting an error message. This is urgent as I need to access my dashboard."
+  }'
+```
+
+## Example Response
+
+```json
+{
+  "category": "Technical Support",
+  "priority": "High",
+  "confidence": {
+    "category": 0.92,
+    "priority": 0.87
+  }
+}
+```
+
+## Use Cases
+
+The triage endpoint is useful for:
+
+- **Automatic ticket routing** - Route tickets to the appropriate support team based on category
+- **Priority queuing** - Prioritize urgent tickets in the support queue
+- **SLA management** - Set response time expectations based on priority predictions
+- **Analytics** - Track common categories and priorities across support tickets
+
+## Model Training
+
+The ML models used by this endpoint can be trained using the CLI:
+
+```bash
+uv run -m src.ml.train
+```
+
+<Note>
+Trained model artifacts are stored in the `artifacts/` directory and automatically loaded when the API starts.
+</Note>
+
+## Confidence Scores
+
+Confidence scores indicate how certain the model is about its predictions:
+
+- **> 0.8** - High confidence, safe to use for automated routing
+- **0.6 - 0.8** - Medium confidence, consider human review
+- **< 0.6** - Low confidence, recommend manual classification

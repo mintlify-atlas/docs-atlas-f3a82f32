@@ -1,0 +1,311 @@
+---
+title: Knowledge Base
+description: Explore document ingestion, chunking, embeddings, and vector storage in Chroma
+---
+
+The knowledge base is the foundation of the RAG system. It stores support documentation as semantic embeddings in a Chroma vector database, enabling fast similarity search during answer generation.
+
+## Architecture Overview
+
+The `DocumentIngestor` class orchestrates the offline ingestion pipeline:
+
+1. **Load** - Parse documents using Unstructured API
+2. **Classify** - Assign support category via LLM
+3. **Chunk** - Split into retrieval-friendly segments
+4. **Embed** - Generate semantic vectors with OpenAI
+5. **Store** - Persist in Chroma with metadata
+
+<Warning>
+Ingestion is intentionally offline-only and does not run in production request paths.
+</Warning>
+
+## Initialization
+
+The ingestor requires OpenAI and Unstructured API keys:
+
+```python
+class DocumentIngestor:
+    """
+    Offline document ingestion utility for the RAG knowledge base.
+    """
+
+    def __init__(
+        self,
+        collection_name: str = "docs_collection",
+        persist_dir: str = "./chroma_db",
+        unstructured_api_key: str | None = UNSTRUCTURED_API_KEY,
+    ):
+        """
+        Initialize embeddings and vector store.
+        """
+        if not unstructured_api_key:
+            raise ValueError("UNSTRUCTURED_API_KEY is required")
+
+        if not OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is required")
+
+        self.collection_name = collection_name
+        self.persist_dir = persist_dir
+        self.unstructured_api_key = unstructured_api_key
+
+        self.embeddings = OpenAIEmbeddings(
+            openai_api_key=OPENAI_API_KEY,
+            model="text-embedding-3-small",
+        )
+
+        self.vectordb = Chroma(
+            collection_name=self.collection_name,
+            embedding_function=self.embeddings,
+            persist_directory=self.persist_dir,
+        )
+```
+
+<Info>
+The system uses OpenAI's `text-embedding-3-small` model for cost-effective, high-quality embeddings.
+</Info>
+
+## Phase 1: Document Loading
+
+Documents are parsed using the Unstructured API:
+
+```python
+def load_document(self, file_path: str) -> List[Dict[str, str]]:
+    """
+    Load a document and extract raw elements.
+    """
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    loader = UnstructuredLoader(
+        file_path=str(path),
+        api_key=self.unstructured_api_key,
+        partition_via_api=True,
+    )
+
+    docs = loader.load()
+
+    # Predict a single category for the entire document
+    full_text = "\n".join(doc.page_content for doc in docs)
+    category = predict_document_category(full_text)
+
+    return [
+        {
+            "element_id": doc.metadata["element_id"],
+            "content": doc.page_content,
+            "filename": doc.metadata.get("filename", path.name),
+            "category": category,
+        }
+        for doc in docs
+    ]
+```
+
+<Note>
+The LLM-based `predict_document_category()` function assigns a canonical support category to each document.
+</Note>
+
+## Phase 2: Document Chunking
+
+Large documents are split into overlapping chunks for better retrieval:
+
+```python
+def chunk_documents(
+    self,
+    documents: List[Dict[str, str]],
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+) -> List[Dict[str, str]]:
+    """
+    Split documents into overlapping chunks for retrieval.
+
+    Preserves:
+        - filename
+        - category
+        - original element identity
+    """
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        length_function=len,
+    )
+
+    chunked_docs: List[Dict[str, str]] = []
+
+    for doc in documents:
+        for chunk in splitter.split_text(doc["content"]):
+            chunked_docs.append(
+                {
+                    "element_id": doc["element_id"],
+                    "content": chunk,
+                    "filename": doc["filename"],
+                    "category": doc["category"],
+                }
+            )
+
+    return chunked_docs
+```
+
+<Info>
+Default chunk size is 500 characters with 50-character overlap to preserve context across boundaries.
+</Info>
+
+### Why Chunking Matters
+
+<CardGroup cols={2}>
+  <Card title="Retrieval Precision" icon="crosshairs">
+    Smaller chunks improve semantic match accuracy
+  </Card>
+  <Card title="Context Control" icon="sliders">
+    Overlaps prevent information loss at boundaries
+  </Card>
+  <Card title="LLM Efficiency" icon="gauge">
+    Reduces token usage in generation prompts
+  </Card>
+  <Card title="Citation Clarity" icon="quote-right">
+    Enables precise source attribution
+  </Card>
+</CardGroup>
+
+## Phase 3: ID Normalization
+
+Element IDs are normalized for cleaner citations:
+
+```python
+def normalize_element_ids(
+    self, chunked_docs: List[Dict[str, str]]
+) -> List[Dict[str, str]]:
+    """
+    Convert original element IDs to sequential, deterministic IDs.
+
+    Why:
+    - Cleaner citations
+    - Stable references across chunks
+    """
+    seen: Dict[str, str] = {}
+    counter = 1
+
+    for doc in chunked_docs:
+        original_id = doc["element_id"]
+        if original_id not in seen:
+            seen[original_id] = str(counter)
+            counter += 1
+
+        doc["element_id"] = seen[original_id]
+
+    return chunked_docs
+```
+
+## Phase 4: Vector Storage
+
+Chunks are embedded and stored in Chroma:
+
+```python
+def store(self, chunked_docs: List[Dict[str, str]]) -> None:
+    """
+    Persist chunked documents into the vector store.
+    """
+    texts = [doc["content"] for doc in chunked_docs]
+    metadatas = [
+        {
+            "element_id": doc["element_id"],
+            "filename": doc["filename"],
+            "category": doc["category"],
+        }
+        for doc in chunked_docs
+    ]
+
+    self.vectordb.add_texts(texts=texts, metadatas=metadatas)
+```
+
+<Warning>
+Metadata (filename, category, element_id) is preserved for filtering and citation generation.
+</Warning>
+
+## Example Usage
+
+Ingesting a folder of markdown documents:
+
+```python
+if __name__ == "__main__":
+    ingestor = DocumentIngestor()
+
+    kb_folder = "/path/to/kb_docs"
+    md_files = glob(os.path.join(kb_folder, "*.md"))
+
+    total_chunks = 0
+
+    for file_path in md_files:
+        logger.info(f"📄 Ingesting: {file_path}")
+
+        docs = ingestor.load_document(file_path)
+        chunked = ingestor.chunk_documents(docs)
+        chunked = ingestor.normalize_element_ids(chunked)
+        ingestor.store(chunked)
+
+        total_chunks += len(chunked)
+        logger.info(f"   → Stored {len(chunked)} chunks")
+
+    logger.info(
+        f"\n✅ Ingested {len(md_files)} documents | {total_chunks} total chunks"
+    )
+```
+
+## Retrieval at Query Time
+
+The RAG agent performs filtered similarity search:
+
+```python
+def retrieve(
+    self,
+    query: str,
+    predicted_category: str,
+    k: int = 5,
+) -> List[Dict]:
+    """
+    Retrieve top-K relevant chunks from the vector store.
+    """
+    filters = {"category": predicted_category}
+
+    results = self.vectordb.similarity_search_with_relevance_scores(
+        query,
+        k=k,
+        filter=filters,
+    )
+
+    return [
+        {
+            "content": doc.page_content,
+            "score": score,
+            "metadata": doc.metadata,
+        }
+        for doc, score in results
+    ]
+```
+
+<Info>
+Retrieval is filtered by the triage model's predicted category to ensure domain relevance.
+</Info>
+
+## Storage Structure
+
+<Accordion title="Chroma Vector Store Schema">
+  Each stored chunk contains:
+  
+  - **Text**: The actual chunk content
+  - **Embedding**: 1536-dimensional vector from OpenAI
+  - **Metadata**:
+    - `element_id`: Normalized sequential ID
+    - `filename`: Source document name
+    - `category`: Support category (Billing, Auth, etc.)
+</Accordion>
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="RAG Pipeline" icon="workflow" href="/concepts/rag-pipeline">
+    See how retrieved chunks are used in generation
+  </Card>
+  <Card title="Structured Outputs" icon="list" href="/concepts/structured-outputs">
+    Learn how citations reference these chunks
+  </Card>
+</CardGroup>
