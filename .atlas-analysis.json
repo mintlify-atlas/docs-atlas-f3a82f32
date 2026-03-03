@@ -1,0 +1,97 @@
+{
+  "projectType": "ai-ml",
+  "projectName": "RAG Support System",
+  "projectDescription": "A Retrieval-Augmented Generation (RAG) system for customer support with ML triage models, semantic retrieval, and LLM-based answer generation.",
+  "theme": "palm",
+  "primaryColor": "#6366f1",
+  "lightColor": "#818cf8",
+  "darkColor": "#4f46e5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation",
+              "architecture"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/rag-pipeline",
+              "concepts/triage-models",
+              "concepts/knowledge-base",
+              "concepts/structured-outputs"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/data-ingestion",
+              "guides/training-models",
+              "guides/running-predictions",
+              "guides/evaluation",
+              "guides/testing"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/docker",
+              "deployment/environment-variables",
+              "deployment/production"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/overview",
+              "api/answer",
+              "api/triage",
+              "api/ingest",
+              "api/health"
+            ]
+          },
+          {
+            "group": "Models",
+            "pages": [
+              "api/models/requests",
+              "api/models/responses"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "RAG-based answer generation with grounded responses",
+    "ML triage classification for category and priority prediction",
+    "Semantic document retrieval using Chroma vector store",
+    "Structured outputs with citations and internal next steps",
+    "Offline evaluation with faithfulness and adversarial testing",
+    "FastAPI endpoints for ingestion and question answering",
+    "Docker support for containerized deployment"
+  ],
+  "publicApiSurface": [
+    "POST /api/v1/answer - Query RAG system for ticket answers",
+    "POST /api/v1/triage - Run ML triage on ticket",
+    "POST /api/v1/ingest - Ingest documents into knowledge base",
+    "GET /api/v1/health - Health check endpoint",
+    "SimpleRetrievalAgent.answer() - RAG agent main method",
+    "TriageModel.predict() - Triage prediction method",
+    "DocumentIngestor.ingest() - Document ingestion",
+    "run_evaluation() - Offline evaluation runner",
+    "train() - Model training function",
+    "predict() - Batch prediction function"
+  ]
+}
